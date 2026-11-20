@@ -28,6 +28,17 @@ export function extractBearerToken(authHeader: string | undefined): string | nul
   return parts[1];
 }
 
+/**
+ * Strictly requires `email_confirmed_at` on the Supabase Auth user record.
+ * Never treats `confirmed_at` alone as email confirmation (since phone/other channels
+ * can populate `confirmed_at`).
+ */
+export function isStrictEmailConfirmed(
+  user: { email_confirmed_at?: string | null } | null | undefined
+): boolean {
+  return typeof user?.email_confirmed_at === 'string' && user.email_confirmed_at.trim().length > 0;
+}
+
 export function createRequireAuth(env: ServerEnvConfig) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!env.supabaseConfigured) {
@@ -61,7 +72,7 @@ export function createRequireAuth(env: ServerEnvConfig) {
       });
 
       req.authUser = profile;
-      req.authEmailConfirmed = Boolean(data.user.email_confirmed_at || data.user.confirmed_at);
+      req.authEmailConfirmed = isStrictEmailConfirmed(data.user);
       req.accessToken = token;
       req.supabase = userClient;
       next();

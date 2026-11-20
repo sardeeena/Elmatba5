@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import express from 'express';
 import http from 'node:http';
 import { loadAndValidateEnv, parseTrustProxy } from './config/env.ts';
-import { extractBearerToken } from './middleware/auth.ts';
+import { extractBearerToken, isStrictEmailConfirmed } from './middleware/auth.ts';
 import {
   createCorsMiddleware,
   InMemoryRateLimitStore,
@@ -166,6 +166,26 @@ test('extractBearerToken parses standard Bearer headers and rejects malformed va
   assert.equal(extractBearerToken(undefined), null);
 });
 
+test('isStrictEmailConfirmed strictly requires email_confirmed_at and never substitutes confirmed_at', () => {
+  assert.equal(
+    isStrictEmailConfirmed({
+      email_confirmed_at: '2026-11-20T00:00:00.000Z',
+    }),
+    true
+  );
+
+  // Simulate a phone-confirmed or non-email-confirmed Supabase user where confirmed_at is populated
+  // while email_confirmed_at remains null or undefined
+  const phoneConfirmedOnly = {
+    email_confirmed_at: null,
+    confirmed_at: '2026-11-20T00:00:00.000Z',
+  };
+  assert.equal(isStrictEmailConfirmed(phoneConfirmedOnly), false);
+  assert.equal(isStrictEmailConfirmed({ email_confirmed_at: undefined }), false);
+  assert.equal(isStrictEmailConfirmed({ email_confirmed_at: '   ' }), false);
+  assert.equal(isStrictEmailConfirmed(null), false);
+});
+
 test('slugifyOrgName builds clean URL-safe slugs with random suffix', () => {
   const slug = slugifyOrgName('Cairo Digital Studio!');
   assert.match(slug, /^cairo-digital-studio-[a-f0-9]{6}$/);
@@ -180,20 +200,30 @@ test('InMemoryRateLimitStore blocks requests exceeding window threshold', () => 
   assert.ok(third.retryAfterSec >= 1);
 });
 
-test('acceptTeamInvitation rejects unconfirmed accounts before reaching database RPC', async () => {
-  let rpcCalled = false;
-  const fakeClient = {
+test('acceptTeamInvitation rejects unconfirmed accounts before RPC and keeps DB RPC as final authority otherwise', async () => {
+  let rpcCalled = 0;
+  const fakeUnconfirmedRejectClient = {
     rpc: async () => {
-      rpcCalled = true;
-      return { data: null, error: null };
+      rpcCalled += 1;
+      return {
+        data: null,
+        error: { message: 'Email address must be confirmed before accepting an invitation' },
+      };
     },
   } as unknown as SupabaseClient;
 
   await assert.rejects(
-    () => acceptTeamInvitation(fakeClient, 'a'.repeat(64), { emailConfirmed: false }),
+    () => acceptTeamInvitation(fakeUnconfirmedRejectClient, 'a'.repeat(64), { emailConfirmed: false }),
     (err: unknown) => err instanceof HttpError && err.status === 403 && /confirmed/i.test(err.message)
   );
-  assert.equal(rpcCalled, false);
+  assert.equal(rpcCalled, 0);
+
+  // Even when service options omit emailConfirmed or pass true, the database RPC remains the final gatekeeper
+  await assert.rejects(
+    () => acceptTeamInvitation(fakeUnconfirmedRejectClient, 'a'.repeat(64), { emailConfirmed: true }),
+    (err: unknown) => err instanceof HttpError && err.status === 403 && /confirmed/i.test(err.message)
+  );
+  assert.equal(rpcCalled, 1);
 });
 
 test('completeOnboardingAtomic rejects unsupported market targets and invalid URLs before RPC', async () => {

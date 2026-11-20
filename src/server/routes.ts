@@ -137,7 +137,7 @@ export function createApiRouter(env: ServerEnvConfig) {
       } catch {
         res.status(503).json({
           error:
-            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql and 0002_phase_2a1_security_hardening.sql in Supabase.',
+            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql, 0002_phase_2a1_security_hardening.sql, and 0003_strict_email_confirmation.sql in Supabase.',
         });
       }
     })
@@ -182,7 +182,7 @@ export function createApiRouter(env: ServerEnvConfig) {
       } catch {
         res.status(503).json({
           error:
-            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql and 0002_phase_2a1_security_hardening.sql in Supabase.',
+            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql, 0002_phase_2a1_security_hardening.sql, and 0003_strict_email_confirmation.sql in Supabase.',
         });
       }
     })
