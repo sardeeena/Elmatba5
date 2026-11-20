@@ -14,18 +14,18 @@ EL MATBA5 uses **Supabase Auth** + **Supabase PostgreSQL** + **Row Level Securit
 
 Do **not** delete or squash `0001_initial_schema.sql`. Migrations are ordered and additive:
 
-1. `supabase/migrations/0001_initial_schema.sql` — Base multi-tenant schema, reference registries, initial RPCs, and RLS policies.
-2. `supabase/migrations/0002_phase_2a1_security_hardening.sql` — Phase 2A.1 security and reliability hardening:
+1. `supabase/migrations/20261120160601_0001_initial_schema.sql` — Base multi-tenant schema, reference registries, initial RPCs, and RLS policies.
+2. `supabase/migrations/20261120160604_0002_phase_2a1_security_hardening.sql` — Phase 2A.1 security and reliability hardening:
    - Enforces verified email and parent organization row locking (`FOR UPDATE`) during team quota checks in `accept_organization_invitation`.
    - Tightens `UPDATE` and `DELETE` RLS policies on `project_market_targets` and `project_competitors` to require parent-project `organization_id` matching on both `USING` and `WITH CHECK`, plus `BEFORE UPDATE` immutability triggers (`prevent_cross_org_reassignment`) preventing cross-organization moves even for dual-org users.
    - Replaces non-atomic onboarding with `complete_onboarding_atomic` (`SECURITY DEFINER`, fixed `search_path`, `EXECUTE` granted strictly to `authenticated`), creating organization, owner membership, `usage_records`, project, validated market targets, competitors, and audit logs in a single transaction.
    - Enforces a deliberate transactional organization-creation limit (`public.max_owned_organizations_default()` = **3 owned organizations per user**) using `pg_advisory_xact_lock(hashtext('org_create:' || auth.uid()::text))` inside both `create_organization_atomic` and `complete_onboarding_atomic`.
-3. `supabase/migrations/0003_strict_email_confirmation.sql` — Phase 2A.1.1 strict email confirmation correction:
+3. `supabase/migrations/20261120160607_0003_strict_email_confirmation.sql` — Phase 2A.1.1 strict email confirmation correction:
    - Replaces `public.accept_organization_invitation(p_raw_token)` so it strictly checks `auth.users.email_confirmed_at IS NOT NULL` (never substituting `COALESCE(email_confirmed_at, confirmed_at)` which can be populated by phone/non-email auth).
    - Adds `public.phase_2a1_1_strict_email_confirmation_ready()` (`EXECUTE` granted to `authenticated`) so integration tests can independently verify migration `0003` readiness.
-4. `supabase/migrations/0004_function_permission_hardening.sql` — Phase 2A.1.2 function `EXECUTE` permission hardening:
+4. `supabase/migrations/20261120160906_0004_function_permission_hardening.sql` — Phase 2A.1.2 function `EXECUTE` permission hardening:
    - Revokes `PUBLIC` and `anon` `EXECUTE` across all public RPCs and helper functions, and restricts internal/trigger helpers (`handle_new_user`, `max_owned_organizations_default`, `prevent_cross_org_reassignment`, `rls_auto_enable`) away from `authenticated`.
-5. `supabase/migrations/0005_phase_2a3_security_and_performance.sql` — Phase 2A.3 / 2A.3.1 security remediation & performance optimization:
+5. `supabase/migrations/20261120202600_0005_phase_2a3_security_and_performance.sql` — Phase 2A.3 / 2A.3.1 security remediation & performance optimization:
    - **Performance (Indexes):** Adds 7 justified FK covering indexes (`audit_logs.actor_user_id`, `organization_invitations.accepted_by`, `organization_invitations.invited_by`, `organizations.created_by`, `organizations.plan_id`, `projects.created_by`, `projects.primary_country_code`) and drops 1 genuinely redundant index (`idx_org_members_org`, already covered by `UNIQUE(organization_id, user_id)`). Retains the other 6 indexes and omits low-selectivity lookup FKs on `project_market_targets` and `provider_coverage`.
    - **Performance (RLS InitPlans):** Rewrites all 5 flagged RLS policies (`profiles_insert_self`, `profiles_update_self`, `org_invitations_insert_admin`, `audit_logs_insert_member`, `projects_insert_analyst`) plus RLS helper functions to evaluate `(SELECT auth.uid())` once per statement.
    - **Security Remediation:** Prevents client tampering with `organizations` billing/ownership columns (`plan_id`, `subscription_status`, `created_by`), drops direct client `INSERT`/`UPDATE` policies on `usage_records`, locks `organization_invitations` updates to `pending -> revoked` transitions, protects `profiles` on BOTH `INSERT` and `UPDATE` against `email`/`id` spoofing via authoritative `auth.users` lookup, prevents client `projects.created_by` alteration, requires `actor_user_id = (SELECT auth.uid())` on direct `audit_logs` inserts, enforces `max_projects` quotas atomically via a `BEFORE INSERT` trigger with 64-bit advisory locking and role verification, and implements real schema catalog checks in `phase_2a3_security_perf_ready()`.
@@ -48,7 +48,7 @@ Do **not** delete or squash `0001_initial_schema.sql`. Migrations are ordered an
 ### Upgrading an Existing Database (Where `0001`–`0004` Already Ran)
 
 - **Prerequisites & Backup:** Take a logical or physical backup before upgrading (`supabase db dump` or Supabase Dashboard backup).
-- **Apply `0005`:** Run `supabase/migrations/0005_phase_2a3_security_and_performance.sql` in the SQL Editor or via `supabase db push`. It uses `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, `DROP POLICY IF EXISTS`, and `DROP TRIGGER IF EXISTS` so it applies cleanly and idempotently on top of `0004`.
+- **Apply `0005`:** Run `supabase/migrations/20261120202600_0005_phase_2a3_security_and_performance.sql` in the SQL Editor or via `supabase db push`. It uses `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, `DROP POLICY IF EXISTS`, and `DROP TRIGGER IF EXISTS` so it applies cleanly and idempotently on top of `0004`.
 - **Rollback Considerations:**
   - If existing customer accounts already own more than 3 organizations before applying `0002`, existing ownership rows remain intact (only *new* creations check the limit), or `public.max_owned_organizations_default()` can be adjusted in a follow-up migration.
   - To revert `0005` triggers/policies/indexes safely, restore the pre-migration snapshot or drop the `0005` triggers and re-apply `0004` function grants without dropping tenant tables.
@@ -80,7 +80,7 @@ The default `InMemoryRateLimitStore` in `src/server/middleware/security.ts` stor
 
 ## 4. Preserving Local Phase 1 SQLite Data (`data/elmatba5.db`)
 
-Phase 1 created a local `data/elmatba5.db` SQLite database in development. Neither Phase 2A nor Phase 2A.3 deletes `data/elmatba5.db`. Reference registries (`countries`, `languages`, `search_engines`, `provider_coverage`, `plans`) are seeded idempotently by `supabase/migrations/0001_initial_schema.sql`. If you need to export Phase 1 local SQLite records manually, run `sqlite3 data/elmatba5.db ".dump" > backup.sql`.
+Phase 1 created a local `data/elmatba5.db` SQLite database in development. Neither Phase 2A nor Phase 2A.3 deletes `data/elmatba5.db`. Reference registries (`countries`, `languages`, `search_engines`, `provider_coverage`, `plans`) are seeded idempotently by `supabase/migrations/20261120160601_0001_initial_schema.sql`. If you need to export Phase 1 local SQLite records manually, run `sqlite3 data/elmatba5.db ".dump" > backup.sql`.
 
 ---
 
