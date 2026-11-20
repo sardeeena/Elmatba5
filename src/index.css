@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  --brand-red: #F42902;
+  --brand-white: #FDFDFF;
+  --brand-punk: #83FD80;
+  --brand-ink: #111111;
+  --brand-muted: #52525B;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Plus Jakarta Sans', 'Cairo', system-ui, -apple-system, sans-serif;
+  }
+
+  html[dir="rtl"] {
+    font-family: 'Cairo', 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Bricolage Grotesque', 'Cairo', system-ui, sans-serif;
+    text-wrap: balance;
+  }
+
+  html[dir="rtl"] h1,
+  html[dir="rtl"] h2,
+  html[dir="rtl"] h3,
+  html[dir="rtl"] .font-display {
+    font-family: 'Cairo', 'Bricolage Grotesque', system-ui, sans-serif;
+  }
+
+  .font-mono, .tabular-nums {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.kitchen-grid-pattern {
+  background-image:
+    linear-gradient(to right, rgba(17, 17, 17, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(17, 17, 17, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.kitchen-grid-pattern-red {
+  background-image:
+    linear-gradient(to right, rgba(253, 253, 255, 0.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(253, 253, 255, 0.14) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

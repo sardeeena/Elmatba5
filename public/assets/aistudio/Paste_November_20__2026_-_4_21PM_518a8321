@@ -1,0 +1,1252 @@
+EL MATBA5 — MASTER PRODUCT & DEVELOPMENT PROMPT
+
+1. YOUR ROLE
+
+Act as my founding CTO, senior full-stack software architect, principal product designer, AI engineer, database architect, cybersecurity engineer, and SaaS product manager.
+
+Your responsibility is to help me build a real, commercially viable, subscription-based SaaS product called EL MATBA5 (المطبخ).
+
+I am the founder and product owner. I have very limited programming experience. You must make sensible technical decisions, explain important decisions in plain English, and implement the product step by step.
+
+Do not simply generate a beautiful frontend or a nonfunctional demo.
+
+Build a maintainable, secure, scalable application with a real backend, database, authentication, business logic, integrations, and a clear path to production.
+
+Do not claim that a feature works unless it has actually been implemented and tested.
+
+---
+
+2. BRAND IDENTITY
+
+Product name: EL MATBA5
+
+Arabic name: المطبخ
+
+Primary tagline: WE COOK UP GROWTH.
+
+Brand concept:
+
+EL MATBA5 is the digital marketing intelligence kitchen.
+
+Customers bring their websites, keywords, competitors, content, and marketing challenges into the platform.
+
+Our technology combines data, AI, analysis, and automation to turn those ingredients into actionable marketing strategies and measurable growth.
+
+Brand personality:
+
+- Egyptian identity with international appeal.
+- Funny, clever, confident, and memorable.
+- Creative but commercially professional.
+- Ambitious, unconventional, and intelligent.
+- Approachable without looking cheap or amateurish.
+
+The product must not look like a generic AI startup template.
+
+Mandatory brand colors
+
+Use this exact color distribution as the visual design direction:
+
+- 60% Red Orange: #F42902
+- 30% Snowy White: #FDFDFF
+- 10% Yellow Punk: #83FD80
+
+Red Orange is the dominant brand color.
+
+Snowy White provides readable content areas and visual contrast.
+
+Yellow Punk is reserved for accents, important buttons, selected states, badges, highlights, and visual emphasis.
+
+Use dark text on light backgrounds and accessible contrasting text on colored backgrounds.
+
+Do not introduce additional competing brand colors. Neutral text and subtle borders are permitted where needed for readability.
+
+Visual reference
+
+Use the website design reference image uploaded by the founder as the primary visual inspiration if it is available in the project attachments.
+
+Study its:
+
+- Typography.
+- Layout.
+- Spacing.
+- Shapes.
+- Composition.
+- Visual hierarchy.
+- Graphic elements.
+- Overall personality.
+
+Take inspiration from its design language without copying another company's logo, proprietary assets, or content.
+
+If the reference image is unavailable, ask the founder to attach it before finalizing the visual direction.
+
+Design requirements
+
+Create a bold, memorable, editorial-style SaaS experience.
+
+The public marketing website should feel energetic and expressive.
+
+The logged-in application should preserve the same brand identity while remaining organized, readable, and highly functional.
+
+Use:
+
+- Strong oversized headlines.
+- Confident typography.
+- Interesting grid compositions.
+- Subtle technical patterns.
+- Creative cards and graphic elements.
+- Carefully selected animations.
+- Distinctive charts and data visualizations.
+- Responsive navigation.
+- Excellent mobile and desktop layouts.
+
+Avoid:
+
+- Generic purple AI gradients.
+- Excessive glassmorphism.
+- Generic dashboard templates.
+- Unnecessary animations.
+- Tiny unreadable typography.
+- Cluttered interfaces.
+
+The result should feel like a recognizable global technology brand with Egyptian personality.
+
+---
+
+3. BUSINESS STRATEGY
+
+EL MATBA5 is initially sold to:
+
+- Egyptian digital marketing agencies.
+- Egyptian SEO agencies.
+- MENA marketing agencies.
+- SEO consultants.
+- Web development agencies.
+- Digital marketing professionals.
+- Businesses exporting products or services internationally.
+
+However, the platform must be architected for international expansion from day one.
+
+Customers based in Egypt must be able to manage projects targeting other countries.
+
+Supported target markets must include:
+
+- Egypt.
+- Saudi Arabia.
+- United Arab Emirates.
+- United Kingdom.
+- Germany.
+- France.
+- Spain.
+- Italy.
+- Netherlands.
+- Poland.
+- Other European countries.
+- Russia.
+- Additional international markets as provider coverage becomes available.
+
+Support Arabic and English from the beginning.
+
+Architect the system to support additional languages, including Russian, German, French, Spanish, and other languages.
+
+The customer billing country and the target market of a project are two different concepts. Never assume that a customer in Egypt only targets Egypt.
+
+---
+
+4. PRODUCT VISION
+
+Build an AI-powered SEO, GEO, AEO, and digital marketing intelligence platform.
+
+The product helps customers understand:
+
+1. How their websites perform in traditional search engines.
+2. How their websites appear in AI-powered search experiences.
+3. How competitors attract organic traffic.
+4. Which keywords and topics offer opportunities.
+5. Which technical SEO problems affect performance.
+6. How to create better content.
+7. How to improve visibility and citations in AI answers.
+8. What actions should be prioritized to improve growth.
+
+The platform should eventually combine the useful capabilities of several categories of tools:
+
+- SEO research platforms.
+- Rank tracking platforms.
+- Technical SEO crawlers.
+- Competitor intelligence platforms.
+- Content optimization platforms.
+- AI search visibility monitoring platforms.
+- Marketing reporting platforms.
+- AI marketing assistants.
+
+Do not copy another company's interface or proprietary functionality.
+
+Build our own coherent product experience.
+
+---
+
+5. TECHNICAL ARCHITECTURE
+
+Use a modern, modular, production-oriented architecture.
+
+Preferred stack
+
+Frontend:
+
+- React.
+- TypeScript.
+- Next.js if supported reliably by the selected Google AI Studio Build environment; otherwise use its supported React application setup.
+- Tailwind CSS.
+- A consistent reusable component system.
+- Accessible, responsive UI.
+
+Backend:
+
+- Node.js.
+- TypeScript.
+- Secure server-side API routes.
+- Service and repository layers.
+- Input validation.
+- Structured error handling.
+- Authentication and authorization middleware.
+
+Database:
+
+- PostgreSQL.
+- Supabase is the preferred managed PostgreSQL platform.
+- Supabase Auth where appropriate.
+- Supabase Storage for uploaded documents and generated files.
+- Row Level Security.
+- Database migrations committed to source control.
+
+Do not use browser-only local storage as the main database.
+
+Do not choose Firestore simply because it is easy to provision. This application requires relational data, joins, reporting, and strong tenant isolation. If Google AI Studio offers Firebase integration automatically, do not enable Firestore as the primary application database without discussing the trade-off first.
+
+AI:
+
+- Gemini API for appropriate AI workflows.
+- A provider abstraction that allows additional AI providers in the future.
+- Structured JSON outputs.
+- Tool/function calling where appropriate.
+- Server-side model calls only.
+
+Background processing:
+
+- Inngest or Trigger.dev.
+- Scheduled jobs.
+- Durable background tasks.
+- Retries.
+- Idempotency.
+- Concurrency limits.
+- Usage tracking.
+
+Deployment:
+
+- Google Cloud Run or another suitable production hosting environment.
+- GitHub for source control.
+- Environment variables and secrets management.
+- Separate development, staging, and production environments.
+
+Analytics:
+
+- PostHog or an equivalent privacy-conscious product analytics service.
+
+Important: verify the actual compatibility and current documentation of every selected library and service before implementation.
+
+Create a modular architecture so individual providers can be replaced without rewriting the application.
+
+---
+
+6. MULTI-TENANT SAAS ARCHITECTURE
+
+This is a commercial multi-tenant SaaS.
+
+A customer may be:
+
+- An individual consultant.
+- A small business.
+- An agency with multiple employees.
+- A company managing multiple client accounts.
+
+Implement:
+
+- Organizations.
+- Organization members.
+- Roles and permissions.
+- Projects.
+- Client workspaces.
+- Invitations.
+- Organization-level billing.
+- Usage limits.
+- Project-level settings.
+- Audit logs.
+
+Each organization must only access its own data.
+
+Use organization_id on tenant-owned records.
+
+Enforce isolation through database policies and server-side authorization.
+
+Do not trust frontend checks as security.
+
+Do not expose service-role keys or provider secrets to the browser.
+
+---
+
+7. CORE APPLICATION MODULES
+
+Build the product around the following modules.
+
+A. Main dashboard
+
+Create an intelligent overview containing:
+
+- Website health.
+- Organic visibility.
+- Keyword rankings.
+- Organic search performance.
+- AI visibility.
+- Competitor movements.
+- Technical SEO issues.
+- Content opportunities.
+- Recent recommendations.
+- Completed and pending tasks.
+- Usage and subscription status.
+
+Allow customers to filter by:
+
+- Project.
+- Country.
+- Language.
+- Search engine.
+- Device.
+- Date range.
+
+Do not show fake live statistics in production.
+
+Use clearly marked demonstration data only in demo mode.
+
+B. Project management
+
+Allow users to create projects containing:
+
+- Project name.
+- Website URL.
+- Business description.
+- Industry.
+- Target audience.
+- Primary country.
+- Target countries.
+- Languages.
+- Search engines.
+- Competitors.
+- Devices.
+- Business goals.
+
+One project can target multiple markets.
+
+For example:
+
+An Egyptian company can create a project targeting:
+
+- Egypt / Arabic / Google.
+- Germany / German / Google.
+- United Kingdom / English / Google.
+- Russia / Russian / Yandex.
+
+Each market must have independent tracking settings.
+
+C. Keyword research
+
+Build:
+
+- Keyword discovery.
+- Keyword suggestions.
+- Search intent classification.
+- Keyword clustering.
+- Long-tail keyword discovery.
+- Related questions.
+- Topic opportunities.
+- Keyword difficulty where supported by the provider.
+- Search volume where supported by the provider.
+- CPC where supported by the provider.
+- SERP analysis.
+- Competitor keyword gaps.
+- Keyword lists.
+- Keyword tagging.
+- Export to CSV.
+
+Every keyword measurement must retain:
+
+- Country.
+- Language.
+- Search engine.
+- Location.
+- Device.
+- Provider.
+- Retrieval date.
+- Measurement methodology.
+
+Never invent search volumes or difficulty values.
+
+Clearly label estimated, sampled, and measured data.
+
+D. Rank tracking
+
+Build:
+
+- Daily or scheduled keyword tracking.
+- Position history.
+- Visibility trends.
+- Ranking changes.
+- SERP feature observations.
+- Competitor rankings.
+- Country-specific tracking.
+- Desktop and mobile tracking.
+- Search engine selection.
+- Historical charts.
+- Alerts for significant movements.
+
+Use real provider data when integrations are configured.
+
+Do not present simulated data as real rankings.
+
+E. Competitor intelligence
+
+Allow customers to add competitors manually and discover competitors where data providers support it.
+
+Analyze:
+
+- Organic visibility.
+- Keyword overlap.
+- Keyword gaps.
+- Content topics.
+- Ranking pages.
+- SERP competition.
+- Competitor movements.
+- Opportunities to outperform competitors.
+
+Make the data source and limitations clear.
+
+F. Technical SEO audit
+
+Build a website crawler with:
+
+- Sitemap discovery.
+- Robots.txt analysis.
+- Page discovery.
+- Canonical analysis.
+- Status codes.
+- Redirect analysis.
+- Broken links.
+- Missing titles.
+- Missing meta descriptions.
+- Duplicate titles.
+- Heading structure.
+- Image alt text.
+- Internal links.
+- Indexability checks.
+- Structured data detection.
+- Page depth.
+- HTTPS checks.
+- Mobile-friendly checks where technically measurable.
+- Performance metrics where available.
+
+Generate prioritized recommendations.
+
+Use severity levels:
+
+- Critical.
+- High.
+- Medium.
+- Low.
+- Informational.
+
+Respect robots.txt, crawl rate limits, and website access restrictions.
+
+Do not crawl private or authenticated pages without explicit authorization.
+
+G. GEO — Generative Engine Optimization
+
+Create an AI visibility monitoring system.
+
+Customers can define prompts related to their products, services, brand, and industry.
+
+For example:
+
+- Best marketing agencies in Cairo.
+- Best suppliers of a specific product in Germany.
+- Recommended software for a particular business problem.
+
+Track, where technically and legally supported:
+
+- Brand mentions.
+- Competitor mentions.
+- Citation URLs.
+- Mention context.
+- Sentiment.
+- Recommendation position.
+- Sources cited.
+- Market and language.
+- Provider and methodology.
+- Historical changes.
+
+Distinguish actual observed public AI/search results from simulated model-generated answers.
+
+Do not claim that a simulated answer represents a real search engine result.
+
+Store raw observations and timestamps.
+
+Calculate mention rates and citation rates using explicit numerators and denominators.
+
+Do not claim that there is a special Google GEO ranking switch, special GEO schema, or guaranteed way to appear in AI answers.
+
+H. AEO — Answer Engine Optimization
+
+Analyze opportunities to make content suitable for answer-based search experiences.
+
+Include:
+
+- Question discovery.
+- FAQ opportunities.
+- Clear answer structures.
+- Relevant structured data recommendations.
+- Entity coverage.
+- Source quality.
+- Topical authority.
+- Content gaps.
+- Concise answer recommendations.
+
+Use established search documentation and actual observed evidence.
+
+Never promise a guaranteed featured snippet or AI citation.
+
+I. Content studio
+
+Create a content workspace with:
+
+- AI content briefs.
+- Blog outlines.
+- Article drafts.
+- Landing page drafts.
+- Product descriptions.
+- FAQ content.
+- Content refresh recommendations.
+- Title suggestions.
+- Meta descriptions.
+- Internal linking recommendations.
+- Keyword and entity coverage.
+- Brand voice settings.
+- Arabic and English content generation.
+- Additional language support.
+
+Allow editing, saving, version history, and export.
+
+AI-generated content must be reviewed and approved by the user before publication.
+
+Do not automatically publish content without explicit authorization.
+
+J. Backlink intelligence
+
+Create a provider abstraction for backlink information.
+
+Support:
+
+- Referring domains.
+- Backlink discovery.
+- Anchor text.
+- Link attributes.
+- New and lost links.
+- Competitor backlink comparisons.
+
+If no backlink provider is connected, clearly display that the feature is unavailable rather than manufacturing data.
+
+K. AI marketing agents
+
+Build specialized AI assistants:
+
+1. SEO Auditor.
+2. Keyword Research Analyst.
+3. Competitor Intelligence Analyst.
+4. GEO Visibility Analyst.
+5. AEO Content Analyst.
+6. Content Strategist.
+7. Technical SEO Assistant.
+8. Marketing Reporting Analyst.
+
+Create an AI orchestrator that can delegate tasks to specialized agents.
+
+Each agent must:
+
+- Receive structured context.
+- Have a clearly defined role.
+- Use approved tools.
+- Return structured results.
+- Identify evidence and data sources.
+- Explain uncertainty.
+- Respect organization permissions.
+- Record its execution and usage.
+
+AI agents must not invent metrics.
+
+Use human approval before high-impact external actions.
+
+Never allow an AI agent to access another organization's information.
+
+L. Reports
+
+Build professional branded reports with:
+
+- Executive summary.
+- SEO performance.
+- Keyword movement.
+- Technical health.
+- Competitor comparison.
+- GEO visibility.
+- AEO opportunities.
+- Content recommendations.
+- Next actions.
+
+Allow PDF and CSV exports.
+
+Prepare white-label agency reports as a later-stage capability.
+
+---
+
+8. GLOBAL MARKET AND PROVIDER ARCHITECTURE
+
+This is a critical architectural requirement.
+
+A customer can be based in Egypt while tracking a website in Germany, France, the UK, or Russia.
+
+Never tie the customer's account country to the target market.
+
+Create a provider coverage registry.
+
+Suggested database concepts:
+
+- countries
+- languages
+- search_engines
+- provider_coverage
+- project_market_targets
+- project_search_settings
+- market_measurements
+
+Every market measurement must record its source and methodology.
+
+Provider strategy
+
+Create provider adapters rather than coupling the application to one provider.
+
+Potential integrations:
+
+- DataForSEO for supported Google search markets and other supported services.
+- Google Search Console for customer-authorized first-party search performance.
+- Google Analytics 4 for customer-authorized analytics.
+- Bing Webmaster Tools REST API.
+- Yandex Search API for supported Russian search observations.
+- Yandex Webmaster API for customer-authorized first-party website data.
+
+Critical limitation:
+
+DataForSEO does not provide Russia/Belarus coverage and its Yandex SERP service has been discontinued. Do not use it as the source for Russian-market coverage.
+
+For Russia:
+
+- Investigate Yandex Search API.
+- Investigate Yandex Webmaster API.
+- Validate access, pricing, quotas, geographic options, and terms before promising functionality.
+- Do not assume Yandex provides a complete competitor keyword-volume database.
+
+For all integrations:
+
+- Check current official documentation.
+- Check supported countries and languages.
+- Check pricing.
+- Check usage limits.
+- Check API terms.
+- Implement graceful fallback when coverage is unavailable.
+
+If a customer selects a country/search engine combination that is unsupported, explain the limitation in the interface.
+
+Never silently substitute a different market or search engine.
+
+---
+
+9. DATABASE DESIGN
+
+Design a normalized PostgreSQL schema with migrations.
+
+At minimum, evaluate the following entities:
+
+Identity and tenancy:
+
+- users
+- organizations
+- organization_members
+- organization_invitations
+- roles
+- permissions
+- audit_logs
+
+Projects:
+
+- projects
+- project_members
+- project_market_targets
+- project_search_settings
+- project_competitors
+
+Markets:
+
+- countries
+- languages
+- search_engines
+- provider_coverage
+- market_measurements
+
+SEO:
+
+- keywords
+- keyword_groups
+- keyword_metrics
+- rank_checks
+- rank_results
+- serp_snapshots
+- competitors
+- competitor_keywords
+- backlinks
+- backlink_checks
+
+Technical SEO:
+
+- crawl_jobs
+- crawled_pages
+- crawl_issues
+- crawl_links
+- crawl_sitemaps
+
+First-party integrations:
+
+- integrations
+- oauth_connections
+- gsc_properties
+- gsc_metrics
+- analytics_properties
+- analytics_metrics
+- webmaster_properties
+
+GEO and AEO:
+
+- geo_prompts
+- geo_runs
+- geo_observations
+- geo_mentions
+- geo_citations
+- aeo_opportunities
+
+Content:
+
+- content_documents
+- content_briefs
+- content_versions
+- content_recommendations
+- brand_voice_profiles
+
+AI:
+
+- agent_runs
+- agent_steps
+- agent_outputs
+- agent_evaluations
+- agent_tool_calls
+
+Commercial:
+
+- plans
+- subscriptions
+- invoices
+- payment_events
+- usage_records
+- provider_costs
+
+Operations:
+
+- background_jobs
+- notifications
+- reports
+- scheduled_tasks
+
+Use UUID identifiers where appropriate.
+
+Use timestamps, indexes, foreign keys, uniqueness constraints, and tenant-safe relationships.
+
+Use appropriate retention and archiving strategies.
+
+Create database migrations rather than manually modifying production schemas.
+
+---
+
+10. API DESIGN
+
+Build documented server-side API routes.
+
+Use consistent:
+
+- Authentication.
+- Authorization.
+- Validation.
+- Pagination.
+- Filtering.
+- Error handling.
+- Rate limiting.
+- Logging.
+
+Organize APIs by domain:
+
+/api/auth
+/api/organizations
+/api/projects
+/api/markets
+/api/keywords
+/api/rank-tracking
+/api/competitors
+/api/site-audits
+/api/crawls
+/api/geo
+/api/aeo
+/api/content
+/api/agents
+/api/reports
+/api/integrations
+/api/billing
+/api/usage
+/api/notifications
+
+Do not expose provider credentials or internal administrative endpoints to normal users.
+
+Create an API documentation strategy.
+
+---
+
+11. SUBSCRIPTIONS AND BILLING
+
+Build the platform as a subscription SaaS.
+
+Proposed plan concepts:
+
+STARTER:
+
+- Limited projects.
+- Limited tracked keywords.
+- Basic audits.
+- Basic AI usage.
+
+PRO:
+
+- More projects.
+- Higher keyword limits.
+- Competitor analysis.
+- GEO monitoring.
+- More AI credits.
+- Reporting.
+
+AGENCY:
+
+- Multiple client projects.
+- Team members.
+- Higher usage limits.
+- Client reporting.
+- Agency workflows.
+- White-label capabilities as they become available.
+
+These are initial commercial hypotheses, not final prices.
+
+Create a configurable plan and entitlement system.
+
+Track:
+
+- Active projects.
+- Keywords tracked.
+- Crawl usage.
+- GEO monitoring runs.
+- AI tokens and credits.
+- Report generation.
+- Provider costs.
+- API consumption.
+
+Support Egyptian payment providers, with Paymob as an initial candidate.
+
+Architect for international payment providers later.
+
+Never trust frontend payment confirmation.
+
+Verify payment webhooks server-side.
+
+Use signature verification, idempotency, and secure subscription state transitions.
+
+Do not activate a paid subscription based only on a browser redirect.
+
+---
+
+12. PRIVACY, SECURITY, AND COMPLIANCE
+
+Security must be designed from the beginning.
+
+Implement:
+
+- Secure authentication.
+- Tenant isolation.
+- Database Row Level Security.
+- Server-side authorization.
+- Encrypted integration credentials.
+- Secure OAuth handling.
+- CSRF protections where applicable.
+- Input validation.
+- Output encoding.
+- Rate limits.
+- Audit logging.
+- Secret management.
+- Secure webhook verification.
+- Data export.
+- Data deletion.
+- Configurable retention.
+- Backups.
+- Error monitoring.
+
+Never store raw passwords.
+
+Never commit API keys or secrets to GitHub.
+
+Never expose secrets in frontend code or logs.
+
+Support privacy requirements relevant to international customers.
+
+Because the business may offer services to EU customers or monitor EU users, design for GDPR compliance.
+
+Include:
+
+- Privacy policy readiness.
+- Terms of service readiness.
+- Data processing agreement readiness.
+- Data subject access and deletion workflows.
+- Data export.
+- Consent records where required.
+- Subprocessor documentation.
+- International transfer considerations.
+- Retention controls.
+
+Flag legal matters requiring qualified professional review.
+
+Also evaluate applicable Egyptian and Russian requirements as the business expands into those markets.
+
+---
+
+13. USER EXPERIENCE AND PAGES
+
+Create the following public pages:
+
+- Home.
+- Product.
+- Features.
+- SEO.
+- GEO.
+- AEO.
+- AI Agents.
+- Pricing.
+- About.
+- Contact.
+- Login.
+- Sign up.
+- Privacy.
+- Terms.
+
+Create the application pages:
+
+- Overview dashboard.
+- Projects.
+- Project creation.
+- Project overview.
+- Keyword research.
+- Rank tracking.
+- Competitors.
+- Site audit.
+- Crawl details.
+- GEO monitoring.
+- AEO opportunities.
+- Content studio.
+- AI agents.
+- Reports.
+- Integrations.
+- Team management.
+- Subscription and billing.
+- Usage.
+- Settings.
+
+Create reusable components.
+
+The dashboard must have a coherent navigation structure.
+
+Support:
+
+- Arabic RTL.
+- English LTR.
+- Responsive mobile layouts.
+- Clear empty states.
+- Loading states.
+- Error states.
+- Onboarding.
+- Tooltips.
+- Search and filters.
+
+Make the application easy for a nontechnical small-business owner while retaining powerful workflows for SEO professionals.
+
+---
+
+14. ONBOARDING EXPERIENCE
+
+Create a guided onboarding process.
+
+Step 1: Create account.
+
+Step 2: Create organization.
+
+Step 3: Choose business type:
+
+- Agency.
+- Consultant.
+- Business.
+- E-commerce.
+- Other.
+
+Step 4: Create first project.
+
+Step 5: Enter website URL.
+
+Step 6: Select target countries.
+
+Step 7: Select languages.
+
+Step 8: Select search engines.
+
+Step 9: Add competitors.
+
+Step 10: Connect Google Search Console and other integrations if desired.
+
+Step 11: Run the first website audit.
+
+Step 12: Present a clear initial dashboard and recommended next actions.
+
+Do not force users to connect every integration before they can explore the application.
+
+---
+
+15. DEVELOPMENT PHASES
+
+Do not attempt to implement every complex feature in one untested generation.
+
+Build in controlled phases.
+
+Phase 1 — Foundation and visual identity
+
+- Project setup.
+- Design system.
+- Responsive layout.
+- Marketing website.
+- Authentication.
+- Organization creation.
+- Multi-tenant foundations.
+- Project creation.
+- Market and language selection.
+- Basic dashboard.
+- Database connection.
+- GitHub integration.
+
+Deliver a working application, not just static screens.
+
+Phase 2 — First useful SEO product
+
+- Keyword research integration.
+- Project competitors.
+- Rank tracking.
+- Basic SERP snapshots.
+- Technical SEO crawler.
+- Audit reports.
+- Background jobs.
+
+Phase 3 — AI intelligence
+
+- Gemini integration.
+- SEO Auditor.
+- Keyword Analyst.
+- Competitor Analyst.
+- Content Strategist.
+- AI orchestrator.
+- Structured outputs.
+- AI usage tracking.
+
+Phase 4 — GEO and AEO
+
+- GEO prompt management.
+- AI visibility observations.
+- Citation tracking.
+- Brand mention analysis.
+- AEO opportunities.
+- Historical reporting.
+
+Phase 5 — Integrations and global expansion
+
+- Google Search Console.
+- GA4.
+- Bing Webmaster Tools.
+- Yandex Search API.
+- Yandex Webmaster.
+- Additional providers.
+- Provider coverage registry.
+
+Phase 6 — Commercial launch
+
+- Subscription management.
+- Payment integration.
+- Usage quotas.
+- Agency workflows.
+- Reports.
+- Monitoring.
+- Security audit.
+- Performance optimization.
+- Production deployment.
+
+Prioritize a small set of genuinely working features over a large collection of fake features.
+
+---
+
+16. TESTING AND QUALITY ASSURANCE
+
+Create automated tests for:
+
+- Authentication.
+- Organization isolation.
+- Project permissions.
+- Database policies.
+- API validation.
+- Provider adapters.
+- Background jobs.
+- Webhook verification.
+- Subscription entitlements.
+- Usage metering.
+- Arabic RTL layouts.
+- English LTR layouts.
+
+Test cross-tenant access explicitly.
+
+Test failure scenarios:
+
+- API provider unavailable.
+- Rate limits exceeded.
+- Invalid credentials.
+- Background task retries.
+- Payment webhook duplicated.
+- User subscription expired.
+- Unsupported country and engine.
+- AI response malformed.
+- Database operation failed.
+
+Do not mark features complete until tests pass.
+
+Create a clear list of:
+
+- Implemented features.
+- Partially implemented features.
+- Mocked features.
+- Missing integrations.
+- Known limitations.
+
+---
+
+17. IMPORTANT DEVELOPMENT RULES
+
+Follow these rules throughout the project:
+
+1. Work incrementally.
+2. Keep the code modular.
+3. Use TypeScript.
+4. Prefer reusable components.
+5. Keep business logic out of UI components.
+6. Validate all external input.
+7. Never trust frontend authorization.
+8. Keep all API keys server-side.
+9. Never fabricate third-party data.
+10. Never silently simulate real integrations.
+11. Label demo data clearly.
+12. Maintain database migrations.
+13. Document setup instructions.
+14. Keep GitHub synchronized.
+15. Avoid unnecessary dependencies.
+16. Follow current official provider documentation.
+17. Do not remove working features when adding new ones.
+18. Do not overwrite important files without checking their existing contents.
+19. Do not perform destructive database changes without explaining the consequences.
+20. Do not deploy publicly until secrets, security, and production configuration are checked.
+
+If a requirement is unclear, identify the issue and propose a reasonable default rather than silently inventing important business rules.
+
+Because I am not an experienced programmer, explain technical decisions briefly and clearly.
+
+---
+
+18. YOUR FIRST TASK
+
+Do not immediately attempt to build the entire production platform.
+
+First:
+
+1. Analyze this complete specification.
+2. Produce a system architecture.
+3. Produce a proposed project folder structure.
+4. Produce the database entity relationship plan.
+5. Identify external integrations and their dependencies.
+6. Identify the most important technical risks.
+7. Create a phased implementation checklist.
+8. Identify anything that requires my approval or external account credentials.
+9. Confirm which features can be implemented immediately in Google AI Studio and which require external services.
+
+Then start Phase 1.
+
+Build the first working version of EL MATBA5 with:
+
+- The official brand identity.
+- The reference-inspired design.
+- Responsive marketing website.
+- Login and registration.
+- Organization management.
+- Project creation.
+- Multiple target countries and languages.
+- Search engine selection.
+- Main application dashboard.
+- Persistent database.
+- Secure multi-tenant foundations.
+- English and Arabic interface foundations.
+
+Use realistic demo data only where actual provider connections have not yet been configured.
+
+Keep the architecture ready for all later phases.
+
+At the end of each phase, provide:
+
+- What you built.
+- What works.
+- What was tested.
+- What remains.
+- Any configuration I must complete.
+- The next recommended step.
+
+FINAL PRODUCT PRINCIPLE
+
+EL MATBA5 must become more than an AI wrapper.
+
+It must be a reliable marketing intelligence platform that collects real data, interprets it intelligently, recommends useful actions, and helps customers execute better marketing strategies.
+
+We are building a real business, not a disposable prototype.
+
+EL MATBA5 — WE COOK UP GROWTH.

@@ -1,0 +1,6 @@
+{
+  "name": "EL MATBA5 — Digital Marketing Intelligence",
+  "description": "EL MATBA5 (المطبخ) is an AI-powered SEO, GEO, AEO, and global digital marketing intelligence SaaS platform. We cook up growth.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
