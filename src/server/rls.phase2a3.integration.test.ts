@@ -66,6 +66,17 @@ test('Phase 2A.3 database security invariants', async (t) => {
     const spoofUpdate = await client.from('profiles').update({ email: 'forged@example.com' }).eq('id', userId);
     assert.ok(spoofUpdate.error, 'Profile email must not be changeable by clients');
 
+    const updatedEmail = `phase23-updated-${crypto.randomUUID()}@example.com`;
+    const authEmailUpdate = await admin.auth.admin.updateUserById(userId, {
+      email: updatedEmail,
+      email_confirm: true,
+    });
+    assert.ifError(authEmailUpdate.error);
+    const syncedProfile = await client.from('profiles').select('email').eq('id', userId).single();
+    assert.ifError(syncedProfile.error);
+    assert.equal(syncedProfile.data.email, updatedEmail,
+      'Supabase Auth email changes must synchronize through the trusted database trigger');
+
     const usage = await client.from('usage_records').insert({
       organization_id: orgId,
       period_ym: '2099-01',
@@ -139,6 +150,10 @@ test('Phase 2A.3 database security invariants', async (t) => {
     const readiness = await client.rpc('phase_2a3_security_perf_ready');
     assert.ifError(readiness.error);
     assert.equal(readiness.data, true);
+
+    const emailSyncReadiness = await client.rpc('phase_2a4_profile_email_sync_ready');
+    assert.ifError(emailSyncReadiness.error);
+    assert.equal(emailSyncReadiness.data, true);
   } finally {
     if (orgId) await admin.from('organizations').delete().eq('id', orgId);
     if (userId) await admin.auth.admin.deleteUser(userId);
