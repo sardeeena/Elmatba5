@@ -8,7 +8,9 @@ test('Phase 2A.3 database security invariants', async (t) => {
   const key = process.env.TEST_SUPABASE_PUBLISHABLE_KEY || '';
   const adminKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY || '';
   if (!url || !key || !adminKey) {
-    t.skip('Requires isolated local Supabase test credentials.');
+    const reason = 'Requires isolated local Supabase test credentials.';
+    if (process.env.CI === 'true') throw new Error(`CI cannot skip Phase 2A.3/2A.4 database tests: ${reason}`);
+    t.skip(reason);
     return;
   }
 
