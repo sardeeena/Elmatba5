@@ -29,12 +29,16 @@ Do **not** delete or squash `0001_initial_schema.sql`. Migrations are ordered an
    - **Performance (Indexes):** Adds 7 justified FK covering indexes (`audit_logs.actor_user_id`, `organization_invitations.accepted_by`, `organization_invitations.invited_by`, `organizations.created_by`, `organizations.plan_id`, `projects.created_by`, `projects.primary_country_code`) and drops 1 genuinely redundant index (`idx_org_members_org`, already covered by `UNIQUE(organization_id, user_id)`). Retains the other 6 indexes and omits low-selectivity lookup FKs on `project_market_targets` and `provider_coverage`.
    - **Performance (RLS InitPlans):** Rewrites all 5 flagged RLS policies (`profiles_insert_self`, `profiles_update_self`, `org_invitations_insert_admin`, `audit_logs_insert_member`, `projects_insert_analyst`) plus RLS helper functions to evaluate `(SELECT auth.uid())` once per statement.
    - **Security Remediation:** Prevents client tampering with `organizations` billing/ownership columns (`plan_id`, `subscription_status`, `created_by`), drops direct client `INSERT`/`UPDATE` policies on `usage_records`, locks `organization_invitations` updates to `pending -> revoked` transitions, protects `profiles` on BOTH `INSERT` and `UPDATE` against `email`/`id` spoofing via authoritative `auth.users` lookup, prevents client `projects.created_by` alteration, requires `actor_user_id = (SELECT auth.uid())` on direct `audit_logs` inserts, enforces `max_projects` quotas atomically via a `BEFORE INSERT` trigger with 64-bit advisory locking and role verification, and implements real schema catalog checks in `phase_2a3_security_perf_ready()`.
+6. `supabase/migrations/20261120203100_0006_phase_2a4_auth_profile_email_sync.sql` — Phase 2A.4 Auth email/profile synchronization:
+   - Adds a trusted `AFTER UPDATE OF email` trigger on `auth.users` so Auth-managed email changes update `profiles.email` without permitting client-side profile email edits.
+   - Uses a private SECURITY DEFINER trigger function, transaction-local sync marker, authoritative `auth.users` lookup in the profile guard, and least-privilege EXECUTE grants.
+   - Adds `phase_2a4_profile_email_sync_ready()` for an explicit catalog-based readiness check.
 
 ### Clean Install (Fresh Supabase Project)
 
 1. Ensure Supabase Email Auth and site/redirect URLs are configured.
 2. **Option A — Supabase Dashboard SQL Editor:**
-   - Run `0001_initial_schema.sql`, `0002_phase_2a1_security_hardening.sql`, `0003_strict_email_confirmation.sql`, `0004_function_permission_hardening.sql`, and `0005_phase_2a3_security_and_performance.sql` in exact numerical order.
+   - Run `0001_initial_schema.sql`, `0002_phase_2a1_security_hardening.sql`, `0003_strict_email_confirmation.sql`, `0004_function_permission_hardening.sql`, `, and `0006_phase_2a4_auth_profile_email_sync.sql` in exact numerical order.
 3. **Option B — Supabase CLI:**
    ```bash
    supabase login
@@ -48,10 +52,10 @@ Do **not** delete or squash `0001_initial_schema.sql`. Migrations are ordered an
 ### Upgrading an Existing Database (Where `0001`–`0004` Already Ran)
 
 - **Prerequisites & Backup:** Take a logical or physical backup before upgrading (`supabase db dump` or Supabase Dashboard backup).
-- **Apply `0005`:** Run `supabase/migrations/20261120202600_0005_phase_2a3_security_and_performance.sql` in the SQL Editor or via `supabase db push`. It uses `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, `DROP POLICY IF EXISTS`, and `DROP TRIGGER IF EXISTS` so it applies cleanly and idempotently on top of `0004`.
+- **Apply candidates only after validation and explicit approval:** Apply `20261120202600_0005_phase_2a3_security_and_performance.sql` and then `20261120203100_0006_phase_2a4_auth_profile_email_sync.sql` in order. They are not yet applied to production. Do not apply either until the isolated local PostgreSQL/RLS suite passes and a production backup/rollback plan is ready.
 - **Rollback Considerations:**
   - If existing customer accounts already own more than 3 organizations before applying `0002`, existing ownership rows remain intact (only *new* creations check the limit), or `public.max_owned_organizations_default()` can be adjusted in a follow-up migration.
-  - To revert `0005` triggers/policies/indexes safely, restore the pre-migration snapshot or drop the `0005` triggers and re-apply `0004` function grants without dropping tenant tables.
+  - To revert `0005`/ `0006` safely, restore the pre-migration snapshot or use a reviewed forward-fix migration; do not edit migration history or drop tenant tables.
 
 ---
 
