@@ -73,6 +73,10 @@ test('Phase 2A.3 database security invariants', async (t) => {
     });
     assert.ok(usage.error, 'Clients must not write usage counters');
 
+    const usageUpdate = await client.from('usage_records')
+      .update({ keywords_tracked: 100000 }).eq('organization_id', orgId);
+    assert.ok(usageUpdate.error, 'Clients must not update usage counters');
+
     const audit = await client.from('audit_logs').insert({
       organization_id: orgId,
       actor_user_id: null,
@@ -80,6 +84,31 @@ test('Phase 2A.3 database security invariants', async (t) => {
       entity_type: 'test',
     });
     assert.ok(audit.error, 'Audit rows must have the authenticated actor');
+
+    const rawInviteToken = crypto.randomBytes(32).toString('hex');
+    const inviteHash = crypto.createHash('sha256').update(rawInviteToken).digest('hex');
+    const invitation = await client.from('organization_invitations').insert({
+      organization_id: orgId,
+      email: 'immutable-invite@example.com',
+      role: 'viewer',
+      token_hash: inviteHash,
+      status: 'pending',
+      invited_by: userId,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }).select('id').single();
+    assert.ifError(invitation.error);
+
+    const invitationTamper = await client.from('organization_invitations')
+      .update({ email: 'changed@example.com' }).eq('id', invitation.data.id);
+    assert.ok(invitationTamper.error, 'Invitation metadata must be immutable');
+
+    const revoke = await client.from('organization_invitations')
+      .update({ status: 'revoked' }).eq('id', invitation.data.id);
+    assert.ifError(revoke.error);
+
+    const restore = await client.from('organization_invitations')
+      .update({ status: 'pending' }).eq('id', invitation.data.id);
+    assert.ok(restore.error, 'A revoked invitation must not be reactivated');
 
     const project = await client.from('projects').insert({
       organization_id: orgId,
@@ -94,6 +123,17 @@ test('Phase 2A.3 database security invariants', async (t) => {
       created_by: crypto.randomUUID(),
     }).eq('id', project.data.id);
     assert.ok(creatorChange.error, 'Project creator must be immutable');
+
+    const concurrentCreates = await Promise.all([1, 2].map((n) => client.from('projects').insert({
+      organization_id: orgId,
+      name: `Concurrent quota ${n}`,
+      website_url: `https://quota-${n}.example`,
+      primary_country_code: 'EG',
+      created_by: userId,
+    }).select('id').single()));
+    assert.equal(concurrentCreates.filter((result) => !result.error && result.data?.id).length, 1);
+    assert.equal(concurrentCreates.filter((result) => result.error).length, 1);
+    assert.match(concurrentCreates.find((result) => result.error)?.error?.message ?? '', /limit reached/i);
 
     const readiness = await client.rpc('phase_2a3_security_perf_ready');
     assert.ifError(readiness.error);
