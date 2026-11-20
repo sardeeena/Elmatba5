@@ -219,7 +219,7 @@ test('slugifyOrgName builds clean URL-safe slugs with random suffix', () => {
   assert.match(slug, /^cairo-digital-studio-[a-f0-9]{6}$/);
 });
 
-test('InMemoryRateLimitStore blocks exceeding threshold and evicts oldest active keys when capped', () => {
+test('InMemoryRateLimitStore fails closed at capacity without evicting active client buckets', () => {
   const store = new InMemoryRateLimitStore(2);
   assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
   assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
@@ -227,13 +227,16 @@ test('InMemoryRateLimitStore blocks exceeding threshold and evicts oldest active
   assert.equal(third.allowed, false);
   assert.ok(third.retryAfterSec >= 1);
 
-  // Fill second bucket and trigger bounded capacity eviction of oldest ('ip1') on 'ip3'
   assert.equal(store.consume('ip2', 2, 10_000).allowed, true);
-  assert.equal(store.consume('ip3', 2, 10_000).allowed, true);
-  // Since 'ip1' was evicted to keep map bounded at 2, re-consuming 'ip1' starts fresh
-  assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
-});
+  const newClientAtCapacity = store.consume('ip3', 2, 10_000);
+  assert.equal(newClientAtCapacity.allowed, false);
+  assert.ok(newClientAtCapacity.retryAfterSec >= 1);
 
+  // The first client's live bucket remains intact despite key churn.
+  const originalClientStillLimited = store.consume('ip1', 2, 10_000);
+  assert.equal(originalClientStillLimited.allowed, false);
+  assert.ok(originalClientStillLimited.retryAfterSec >= 1);
+});
 test('getValidatedOrgAccess rejects non-UUID organization IDs cleanly with 400 before querying Supabase', async () => {
   assert.equal(isValidUuid('550e8400-e29b-41d4-a716-446655440000'), true);
   assert.equal(isValidUuid('not-a-uuid; DROP TABLE organizations;'), false);
