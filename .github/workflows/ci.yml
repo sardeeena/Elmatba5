@@ -48,6 +48,34 @@ jobs:
         id: supabase-start
         run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector
 
+      - name: Add CI-only compatibility for hosted Supabase event-trigger helper
+        run: |
+          cat > supabase/migrations/20261120160500_ci_event_trigger_compat.sql <<'SQL'
+          DO $bootstrap$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_proc p
+              JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = 'rls_auto_enable'
+            ) THEN
+              EXECUTE $create$
+                CREATE FUNCTION public.rls_auto_enable()
+                RETURNS event_trigger
+                LANGUAGE plpgsql
+                SECURITY DEFINER
+                SET search_path = pg_catalog
+                AS $body$
+                BEGIN
+                  RETURN;
+                END;
+                $body$;
+              $create$;
+            END IF;
+          END;
+          $bootstrap$;
+          SQL
+
       - name: Apply all ordered migrations to local PostgreSQL
         run: supabase db reset
 
