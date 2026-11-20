@@ -20,7 +20,7 @@ export interface RateLimitStore {
 }
 
 export class InMemoryRateLimitStore implements RateLimitStore {
-  private buckets = new Map<string, number[]>();
+  private buckets = new Map<string, { timestamps: number[]; windowMs: number }>();
   private readonly maxBuckets: number;
 
   constructor(maxBuckets = 10_000) {
@@ -29,38 +29,45 @@ export class InMemoryRateLimitStore implements RateLimitStore {
 
   consume(key: string, maxHits: number, windowMs: number): RateLimitResult {
     const now = Date.now();
-    const isNewKey = !this.buckets.has(key);
+    const existing = this.buckets.get(key);
 
-    if (isNewKey && this.buckets.size >= this.maxBuckets) {
-      this.pruneExpired(now, windowMs);
-      while (this.buckets.size >= this.maxBuckets) {
-        const oldestKey = this.buckets.keys().next().value;
-        if (oldestKey === undefined) break;
-        this.buckets.delete(oldestKey);
+    if (!existing && this.buckets.size >= this.maxBuckets) {
+      this.pruneExpired(now);
+      // Fail closed at capacity. Evicting a live bucket would reset that client's
+      // quota and let key churn bypass the configured rate limit.
+      if (this.buckets.size >= this.maxBuckets) {
+        const nextExpiry = Math.min(
+          ...Array.from(this.buckets.values(), (bucket) =>
+            (bucket.timestamps[0] ?? now) + bucket.windowMs
+          )
+        );
+        return {
+          allowed: false,
+          retryAfterSec: Math.max(1, Math.ceil((nextExpiry - now) / 1000)),
+        };
       }
     }
 
-    const history = (this.buckets.get(key) ?? []).filter((ts) => now - ts < windowMs);
+    const history = (existing?.timestamps ?? []).filter((ts) => now - ts < windowMs);
     if (history.length >= maxHits) {
       const oldest = history[0] ?? now;
       const retryAfterSec = Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000));
-      this.buckets.delete(key);
-      this.buckets.set(key, history);
+      this.buckets.set(key, { timestamps: history, windowMs });
       return { allowed: false, retryAfterSec };
     }
+
     history.push(now);
-    this.buckets.delete(key);
-    this.buckets.set(key, history);
+    this.buckets.set(key, { timestamps: history, windowMs });
     return { allowed: true, retryAfterSec: 0 };
   }
 
-  private pruneExpired(now: number, windowMs: number) {
-    for (const [bucketKey, timestamps] of this.buckets.entries()) {
-      const active = timestamps.filter((ts) => now - ts < windowMs);
+  private pruneExpired(now: number) {
+    for (const [bucketKey, bucket] of this.buckets.entries()) {
+      const active = bucket.timestamps.filter((ts) => now - ts < bucket.windowMs);
       if (active.length === 0) {
         this.buckets.delete(bucketKey);
       } else {
-        this.buckets.set(bucketKey, active);
+        this.buckets.set(bucketKey, { timestamps: active, windowMs: bucket.windowMs });
       }
     }
   }
