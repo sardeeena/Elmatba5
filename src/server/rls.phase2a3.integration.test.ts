@@ -74,8 +74,9 @@ test('Phase 2A.3 database security invariants', async (t) => {
     assert.ok(usage.error, 'Clients must not write usage counters');
 
     const usageUpdate = await client.from('usage_records')
-      .update({ keywords_tracked: 100000 }).eq('organization_id', orgId);
-    assert.ok(usageUpdate.error, 'Clients must not update usage counters');
+      .update({ keywords_tracked: 100000 }).eq('organization_id', orgId).select('id');
+    assert.ok(usageUpdate.error || (usageUpdate.data?.length ?? 0) === 0,
+      'Clients must not update usage counters');
 
     const audit = await client.from('audit_logs').insert({
       organization_id: orgId,
