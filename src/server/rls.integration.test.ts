@@ -188,6 +188,13 @@ function logDiagnostics(t: test.TestContext, diagnostics: SuiteDiagnostics): voi
   console.info(`[EL MATBA5 RLS Diagnostics] ${JSON.stringify(diagnostics)}`);
 }
 
+function skipOrFailInCi(context: test.TestContext, reason: string): void {
+  if (process.env.CI === 'true') {
+    throw new Error(`CI must execute the live PostgreSQL/RLS suite; skip is not allowed: ${reason}`);
+  }
+  contexskipOrFailInCi(t, reason);
+}
+
 test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', async (t) => {
   const config = resolveIntegrationConfig();
   const diagnostics: SuiteDiagnostics = {
@@ -208,12 +215,12 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       'Missing SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY (or TEST_SUPABASE_URL/TEST_SUPABASE_PUBLISHABLE_KEY) in test environment.';
     diagnostics.skippedTests.push({ name: 'all_live_rls_tests', reason });
     logDiagnostics(t, diagnostics);
-    t.skip(reason);
+    skipOrFailInCi(t, reason);
     return;
   }
 
   if (config.serviceRoleKey.startsWith('sb_secret_') && config.serviceRoleKey.length < 16) {
-    t.skip('Invalid TEST_SUPABASE_SERVICE_ROLE_KEY configuration.');
+    skipOrFailInCi(t, 'Invalid TEST_SUPABASE_SERVICE_ROLE_KEY configuration.');
     return;
   }
 
@@ -232,7 +239,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
     const reason = `Migration 0001_initial_schema.sql not applied (${schema0001Error.message}).`;
     diagnostics.skippedTests.push({ name: 'all_live_rls_tests', reason });
     logDiagnostics(t, diagnostics);
-    t.skip(reason);
+    skipOrFailInCi(t, reason);
     return;
   }
 
@@ -307,7 +314,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
         'Email confirmation prevented test-session creation and no isolated TEST_SUPABASE_SERVICE_ROLE_KEY was provided.';
       diagnostics.skippedTests.push({ name: 'all_authenticated_rls_tests', reason });
       logDiagnostics(t, diagnostics);
-      t.skip(reason);
+      skipOrFailInCi(t, reason);
       return;
     }
 
@@ -315,7 +322,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       const reason = 'Failed to establish authenticated non-privileged sessions for all test identities.';
       diagnostics.skippedTests.push({ name: 'all_authenticated_rls_tests', reason });
       logDiagnostics(t, diagnostics);
-      t.skip(reason);
+      skipOrFailInCi(t, reason);
       return;
     }
 
@@ -520,7 +527,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
           name: 'Child-table UPDATE RLS & cross-org move prevention (0002)',
           reason,
         });
-        sub.skip(reason);
+        skipOrFailInCi(sub, reason);
         return;
       }
 
@@ -697,7 +704,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
         if (diagnostics.migration0003Missing) {
           const reason = 'Migration 0003_strict_email_confirmation.sql is missing.';
           diagnostics.skippedTests.push({ name: testName, reason });
-          sub.skip(reason);
+          skipOrFailInCi(sub, reason);
           return;
         }
 
@@ -706,7 +713,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
             ? 'TEST_SUPABASE_SERVICE_ROLE_KEY is present without TEST_SUPABASE_JWT_SECRET (or TEST_UNCONFIRMED_ACCESS_TOKEN); cannot mint non-privileged authenticated JWT for email_confirmed_at IS NULL.'
             : 'Auto-confirm issued confirmed sessions for signUp; provide TEST_UNCONFIRMED_ACCESS_TOKEN or isolated TEST_SUPABASE_SERVICE_ROLE_KEY + TEST_SUPABASE_JWT_SECRET to run real unconfirmed-email PostgreSQL RPC check.';
           diagnostics.skippedTests.push({ name: testName, reason });
-          sub.skip(reason);
+          skipOrFailInCi(sub, reason);
           return;
         }
 
@@ -871,7 +878,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       if (diagnostics.migration0002Missing) {
         const reason = 'Migration 0002_phase_2a1_security_hardening.sql is missing.';
         diagnostics.skippedTests.push({ name: testName, reason });
-        sub.skip(reason);
+        skipOrFailInCi(sub, reason);
         return;
       }
 
@@ -965,7 +972,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       if (diagnostics.migration0002Missing) {
         const reason = 'Migration 0002_phase_2a1_security_hardening.sql is missing.';
         diagnostics.skippedTests.push({ name: testName, reason });
-        sub.skip(reason);
+        skipOrFailInCi(sub, reason);
         return;
       }
 
@@ -1028,7 +1035,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       if (diagnostics.migration0004Missing) {
         const reason = 'Migration 0004_function_permission_hardening.sql is missing.';
         diagnostics.skippedTests.push({ name: testName, reason });
-        sub.skip(reason);
+        skipOrFailInCi(sub, reason);
         return;
       }
 
@@ -1084,7 +1091,7 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
         if (diagnostics.migration0005Missing) {
           const reason = 'Migration 0005_phase_2a3_security_and_performance.sql is missing.';
           diagnostics.skippedTests.push({ name: testName, reason });
-          sub.skip(reason);
+          skipOrFailInCi(sub, reason);
           return;
         }
 
