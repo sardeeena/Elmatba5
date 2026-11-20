@@ -84,7 +84,38 @@ Phase 1 created a local `data/elmatba5.db` SQLite database in development. Neith
 
 ---
 
-## 5. Running Verification & Isolated RLS Integration Tests
+## 5. Free Local PostgreSQL & RLS Verification
+
+The repository uses timestamp-prefixed migration filenames so Supabase CLI can apply them in order. The first four timestamps match the migration versions already recorded by the production project; the fifth migration is a new, unapplied candidate.
+
+Run the complete stack locally without linking it to production:
+
+```bash
+npm install
+supabase start -x studio,imgproxy,edge-runtime,logflare,vector
+supabase db reset
+```
+
+Configure the test process from the local stack output (never use production credentials):
+
+```bash
+supabase status -o env > /tmp/elmatba5-supabase.env
+set -a
+source /tmp/elmatba5-supabase.env
+set +a
+export TEST_SUPABASE_URL="$API_URL"
+export TEST_SUPABASE_PUBLISHABLE_KEY="$ANON_KEY"
+export TEST_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+export TEST_SUPABASE_JWT_SECRET="$JWT_SECRET"
+npm run lint
+npm test
+npm run build
+supabase stop --no-backup
+```
+
+The test-only service role key and JWT secret are used exclusively by the isolated test runner to provision and clean up synthetic users and to exercise unconfirmed-email authorization. They must never be configured in the application runtime or committed to Git. The GitHub Actions workflow runs the same checks against a disposable local Supabase stack and does not connect to the production project.
+
+## 6. Running Verification & Isolated RLS Integration Tests
 
 ```bash
 npm run lint
