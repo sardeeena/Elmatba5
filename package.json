@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/lib/marketRules.test.ts src/server/security.test.ts src/server/rls.integration.test.ts"
+    "test": "tsx --test src/lib/marketRules.test.ts src/server/security.test.ts src/server/rls.integration.test.ts src/server/rls.phase2a3.integration.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
