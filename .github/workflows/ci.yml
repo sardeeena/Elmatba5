@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, tests, local PostgreSQL/RLS, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Run unit tests
+        run: npx tsx --test src/lib/marketRules.test.ts src/server/security.test.ts
+
+      - name: Set up Supabase CLI
+        id: supabase-cli
+        uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Add CI-only compatibility for hosted Supabase event-trigger helper
+        run: |
+          cat > supabase/migrations/20261120160500_ci_event_trigger_compat.sql <<'SQL'
+          DO $bootstrap$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_proc p
+              JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = 'rls_auto_enable'
+            ) THEN
+              EXECUTE $create$
+                CREATE FUNCTION public.rls_auto_enable()
+                RETURNS event_trigger
+                LANGUAGE plpgsql
+                SECURITY DEFINER
+                SET search_path = pg_catalog
+                AS $body$
+                BEGIN
+                  RETURN;
+                END;
+                $body$;
+              $create$;
+            END IF;
+          END;
+          $bootstrap$;
+          SQL
+
+      - name: Start isolated local Supabase
+        id: supabase-start
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector
+
+      - name: Apply all ordered migrations to local PostgreSQL
+        run: supabase db reset
+
+      - name: Configure isolated local test credentials
+        shell: bash
+        run: |
+          supabase status -o env > /tmp/elmatba5-supabase.env
+          set -a
+          source /tmp/elmatba5-supabase.env
+          set +a
+          {
+            echo "TEST_SUPABASE_URL=$API_URL"
+            echo "TEST_SUPABASE_PUBLISHABLE_KEY=$ANON_KEY"
+            echo "TEST_SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "TEST_SUPABASE_JWT_SECRET=$JWT_SECRET"
+          } >> "$GITHUB_ENV"
+
+      - name: Run full test suite including live local PostgreSQL/RLS tests
+        run: npm test
+
+      - name: Production frontend build
+        run: npm run build
+
+      - name: Stop local Supabase
+        if: always() && steps.supabase-start.outcome == 'success'
+        run: supabase stop --no-backup
