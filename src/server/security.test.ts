@@ -4,7 +4,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import express from 'express';
 import http from 'node:http';
 import { loadAndValidateEnv, parseTrustProxy } from './config/env.ts';
-import { extractBearerToken, isStrictEmailConfirmed } from './middleware/auth.ts';
+import {
+  type AuthenticatedRequest,
+  extractBearerToken,
+  getValidatedOrgAccess,
+  isStrictEmailConfirmed,
+  isValidUuid,
+} from './middleware/auth.ts';
 import {
   createCorsMiddleware,
   InMemoryRateLimitStore,
@@ -12,8 +18,14 @@ import {
   type RateLimitStore,
 } from './middleware/security.ts';
 import { createApiRouter } from './routes.ts';
+import { ensureUserProfile } from './repositories/supabaseRepo.ts';
 import { generateInviteToken, hashInviteToken, slugifyOrgName } from './security.ts';
-import { acceptTeamInvitation, completeOnboardingAtomic, HttpError } from './services/orgService.ts';
+import {
+  acceptTeamInvitation,
+  completeOnboardingAtomic,
+  createTenantProject,
+  HttpError,
+} from './services/orgService.ts';
 
 test('loadAndValidateEnv fails closed in production when required vars are missing or weak', () => {
   assert.throws(
@@ -50,7 +62,7 @@ test('loadAndValidateEnv fails closed in production when required vars are missi
   );
 });
 
-test('loadAndValidateEnv rejects accidental Supabase secret keys in SUPABASE_PUBLISHABLE_KEY', () => {
+test('loadAndValidateEnv rejects accidental Supabase secret keys and legacy service_role JWTs in SUPABASE_PUBLISHABLE_KEY', () => {
   assert.throws(
     () =>
       loadAndValidateEnv({
@@ -58,7 +70,23 @@ test('loadAndValidateEnv rejects accidental Supabase secret keys in SUPABASE_PUB
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_PUBLISHABLE_KEY: 'sb_secret_never_allow_this',
       }),
-    /secret key/i
+    /secret|service_role/i
+  );
+
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ role: 'service_role', iss: 'supabase' })).toString(
+    'base64url'
+  );
+  const legacyServiceRoleJwt = `${header}.${payload}.fake_signature`;
+
+  assert.throws(
+    () =>
+      loadAndValidateEnv({
+        NODE_ENV: 'development',
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: legacyServiceRoleJwt,
+      }),
+    /service_role/i
   );
 });
 
@@ -191,13 +219,62 @@ test('slugifyOrgName builds clean URL-safe slugs with random suffix', () => {
   assert.match(slug, /^cairo-digital-studio-[a-f0-9]{6}$/);
 });
 
-test('InMemoryRateLimitStore blocks requests exceeding window threshold', () => {
-  const store = new InMemoryRateLimitStore();
+test('InMemoryRateLimitStore blocks exceeding threshold and evicts oldest active keys when capped', () => {
+  const store = new InMemoryRateLimitStore(2);
   assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
   assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
   const third = store.consume('ip1', 2, 10_000);
   assert.equal(third.allowed, false);
   assert.ok(third.retryAfterSec >= 1);
+
+  // Fill second bucket and trigger bounded capacity eviction of oldest ('ip1') on 'ip3'
+  assert.equal(store.consume('ip2', 2, 10_000).allowed, true);
+  assert.equal(store.consume('ip3', 2, 10_000).allowed, true);
+  // Since 'ip1' was evicted to keep map bounded at 2, re-consuming 'ip1' starts fresh
+  assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
+});
+
+test('getValidatedOrgAccess rejects non-UUID organization IDs cleanly with 400 before querying Supabase', async () => {
+  assert.equal(isValidUuid('550e8400-e29b-41d4-a716-446655440000'), true);
+  assert.equal(isValidUuid('not-a-uuid; DROP TABLE organizations;'), false);
+
+  let queriedDb = false;
+  let capturedStatus = 0;
+  let capturedBody: unknown = null;
+
+  const fakeReq = {
+    supabase: {
+      from: () => {
+        queriedDb = true;
+        return {};
+      },
+    } as unknown as SupabaseClient,
+    authUser: {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      email: 'user@example.com',
+      fullName: 'Test User',
+      preferredLocale: 'en' as const,
+      createdAt: new Date().toISOString(),
+    },
+  } as AuthenticatedRequest;
+
+  const fakeRes = {
+    status(code: number) {
+      capturedStatus = code;
+      return {
+        json(body: unknown) {
+          capturedBody = body;
+          return fakeRes;
+        },
+      };
+    },
+  } as unknown as express.Response;
+
+  const result = await getValidatedOrgAccess(fakeReq, fakeRes, '../evil-path', 'viewer');
+  assert.equal(result, null);
+  assert.equal(queriedDb, false);
+  assert.equal(capturedStatus, 400);
+  assert.deepEqual(capturedBody, { error: 'Invalid organization ID format' });
 });
 
 test('acceptTeamInvitation rejects unconfirmed accounts before RPC and keeps DB RPC as final authority otherwise', async () => {
@@ -334,3 +411,218 @@ test('API router rejects unauthenticated requests and blocked CORS origins', asy
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('createTenantProject maps PostgreSQL enforce_project_quota_on_insert trigger error to HTTP 402 under concurrent creation', async () => {
+  const orgId = '550e8400-e29b-41d4-a716-446655440001';
+  const userId = '550e8400-e29b-41d4-a716-446655440002';
+  let insertCount = 0;
+
+  const mockSupabase = {
+    from(table: string) {
+      if (table === 'organization_members') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: async () => ({
+                data: [
+                  {
+                    role: 'owner',
+                    organizations: {
+                      id: orgId,
+                      name: 'Quota Test Agency',
+                      slug: 'quota-test-agency',
+                      business_type: 'agency',
+                      billing_country_code: 'EG',
+                      plan_id: 'starter',
+                      subscription_status: 'trialing',
+                      created_at: '2026-11-20T00:00:00.000Z',
+                    },
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'plans') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'starter',
+                  name: 'Starter Kitchen',
+                  description: 'Starter',
+                  price_egp_monthly: 1450,
+                  price_usd_monthly: 29,
+                  max_projects: 2,
+                  max_keywords: 250,
+                  max_crawls_monthly: 10,
+                  max_geo_runs_monthly: 30,
+                  max_ai_credits_monthly: 500,
+                  max_team_members: 2,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'usage_records') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: null, error: null }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'projects') {
+        return {
+          select: (_cols: string, opts?: { count?: string; head?: boolean }) => {
+            if (opts?.head) {
+              return {
+                eq: async () => ({ count: 1, error: null }),
+              };
+            }
+            return {
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({
+                    data: {
+                      id: '550e8400-e29b-41d4-a716-446655440099',
+                      organization_id: orgId,
+                      name: 'Concurrent Survivor',
+                      website_url: 'https://survivor.example',
+                      business_description: '',
+                      industry: '',
+                      target_audience: '',
+                      primary_country_code: 'EG',
+                      business_goals: '',
+                      created_at: '2026-11-20T00:00:00.000Z',
+                      updated_at: '2026-11-20T00:00:00.000Z',
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          },
+          insert: () => ({
+            select: () => ({
+              single: async () => {
+                insertCount += 1;
+                if (insertCount === 1) {
+                  return {
+                    data: { id: '550e8400-e29b-41d4-a716-446655440099' },
+                    error: null,
+                  };
+                }
+                return {
+                  data: null,
+                  error: {
+                    message:
+                      'Project plan limit reached: maximum 2 active projects allowed on current plan',
+                  },
+                };
+              },
+            }),
+          }),
+        };
+      }
+      if (table === 'project_market_targets' || table === 'project_competitors') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                order: async () => ({ data: [], error: null }),
+              }),
+            }),
+          }),
+          insert: async () => ({ error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          insert: async () => ({ error: null }),
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    },
+  } as unknown as SupabaseClient;
+
+  const payload = {
+    organizationId: orgId,
+    actorUserId: userId,
+    name: 'Export Launch',
+    websiteUrl: 'https://launch.example',
+    businessDescription: '',
+    industry: 'Export',
+    targetAudience: '',
+    primaryCountryCode: 'EG',
+    businessGoals: '',
+    marketTargets: [
+      { countryCode: 'EG', languageCode: 'ar', searchEngineCode: 'google' as const, device: 'both' as const },
+    ],
+    competitors: [],
+  };
+
+  const results = await Promise.allSettled([
+    createTenantProject(mockSupabase, payload),
+    createTenantProject(mockSupabase, payload),
+  ]);
+
+  const fulfilled = results.filter((r) => r.status === 'fulfilled');
+  const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.ok(rejected[0].reason instanceof HttpError);
+  assert.equal(rejected[0].reason.status, 402);
+  assert.match(rejected[0].reason.message, /Project plan limit reached/i);
+});
+
+test('ensureUserProfile normalizes trimmed lowercase email when syncing profile row', async () => {
+  let capturedUpsert: Record<string, unknown> | null = null;
+  const mockSupabase = {
+    from(table: string) {
+      assert.equal(table, 'profiles');
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+        }),
+        upsert: (payload: Record<string, unknown>) => {
+          capturedUpsert = payload;
+          return {
+            select: () => ({
+              single: async () => ({
+                data: {
+                  ...payload,
+                  created_at: '2026-11-20T00:00:00.000Z',
+                },
+                error: null,
+              }),
+            }),
+          };
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  const user = await ensureUserProfile(mockSupabase, {
+    id: '550e8400-e29b-41d4-a716-446655440010',
+    email: '  Founder@ElMatba5.COM ',
+    fullName: 'Nadia Hassan',
+    preferredLocale: 'ar',
+    createdAt: '2026-11-20T00:00:00.000Z',
+  });
+
+  assert.equal(capturedUpsert?.['email'], 'founder@elmatba5.com');
+  assert.equal(user.email, 'founder@elmatba5.com');
+});
+

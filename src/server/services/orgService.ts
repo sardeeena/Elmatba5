@@ -255,19 +255,25 @@ export async function createTenantProject(
     }
   }
 
-  return createProject(supabase, {
-    organizationId: input.organizationId,
-    createdByUserId: input.actorUserId,
-    name: input.name,
-    websiteUrl: normalizedUrl,
-    businessDescription: input.businessDescription,
-    industry: input.industry,
-    targetAudience: input.targetAudience,
-    primaryCountryCode: input.primaryCountryCode,
-    businessGoals: input.businessGoals,
-    marketTargets: input.marketTargets,
-    competitors: normalizedCompetitors,
-  });
+  try {
+    return await createProject(supabase, {
+      organizationId: input.organizationId,
+      createdByUserId: input.actorUserId,
+      name: input.name,
+      websiteUrl: normalizedUrl,
+      businessDescription: input.businessDescription,
+      industry: input.industry,
+      targetAudience: input.targetAudience,
+      primaryCountryCode: input.primaryCountryCode,
+      businessGoals: input.businessGoals,
+      marketTargets: input.marketTargets,
+      competitors: normalizedCompetitors,
+    });
+  } catch (err) {
+    const mapped = mapDomainRpcError(err);
+    if (mapped) throw mapped;
+    throw err;
+  }
 }
 
 export async function createTeamInvitation(

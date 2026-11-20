@@ -21,22 +21,35 @@ export interface RateLimitStore {
 
 export class InMemoryRateLimitStore implements RateLimitStore {
   private buckets = new Map<string, number[]>();
-  private readonly maxBuckets = 10_000;
+  private readonly maxBuckets: number;
+
+  constructor(maxBuckets = 10_000) {
+    this.maxBuckets = Math.max(1, maxBuckets);
+  }
 
   consume(key: string, maxHits: number, windowMs: number): RateLimitResult {
     const now = Date.now();
-    if (this.buckets.size >= this.maxBuckets) {
+    const isNewKey = !this.buckets.has(key);
+
+    if (isNewKey && this.buckets.size >= this.maxBuckets) {
       this.pruneExpired(now, windowMs);
+      while (this.buckets.size >= this.maxBuckets) {
+        const oldestKey = this.buckets.keys().next().value;
+        if (oldestKey === undefined) break;
+        this.buckets.delete(oldestKey);
+      }
     }
 
     const history = (this.buckets.get(key) ?? []).filter((ts) => now - ts < windowMs);
     if (history.length >= maxHits) {
       const oldest = history[0] ?? now;
       const retryAfterSec = Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000));
+      this.buckets.delete(key);
       this.buckets.set(key, history);
       return { allowed: false, retryAfterSec };
     }
     history.push(now);
+    this.buckets.delete(key);
     this.buckets.set(key, history);
     return { allowed: true, retryAfterSec: 0 };
   }

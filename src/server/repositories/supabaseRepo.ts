@@ -54,12 +54,14 @@ export async function ensureUserProfile(
     };
   }
 
+  const normalizedEmail = authInfo.email.trim().toLowerCase();
+
   const { data: inserted, error } = await supabase
     .from('profiles')
     .upsert(
       {
         id: authInfo.id,
-        email: authInfo.email.toLowerCase(),
+        email: normalizedEmail,
         full_name: authInfo.fullName,
         preferred_locale: authInfo.preferredLocale,
       },
@@ -71,7 +73,7 @@ export async function ensureUserProfile(
   if (error || !inserted) {
     return {
       id: authInfo.id,
-      email: authInfo.email.toLowerCase(),
+      email: normalizedEmail,
       fullName: authInfo.fullName,
       preferredLocale: authInfo.preferredLocale,
       createdAt: authInfo.createdAt,

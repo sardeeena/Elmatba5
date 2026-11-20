@@ -1,12 +1,13 @@
 import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
-import { resolveMarketProvider } from '../lib/marketRules.ts';
+import { normalizeCompetitorDomain, resolveMarketProvider } from '../lib/marketRules.ts';
 import type { ServerEnvConfig } from './config/env.ts';
 import { createAnonSupabaseClient } from './config/supabase.ts';
 import {
   type AuthenticatedRequest,
   createRequireAuth,
   getValidatedOrgAccess,
+  isValidUuid,
 } from './middleware/auth.ts';
 import { rateLimit } from './middleware/security.ts';
 import {
@@ -33,6 +34,7 @@ import {
 } from './services/orgService.ts';
 import {
   acceptInvitationSchema,
+  addCompetitorSchema,
   contactLeadSchema,
   createOrgSchema,
   createProjectSchema,
@@ -137,13 +139,13 @@ export function createApiRouter(env: ServerEnvConfig) {
       } catch {
         res.status(503).json({
           error:
-            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql, 0002_phase_2a1_security_hardening.sql, and 0003_strict_email_confirmation.sql in Supabase.',
+            'Database schema is not initialized yet. Apply ordered migrations 0001 through 0005 under supabase/migrations/ in Supabase.',
         });
       }
     })
   );
 
-  router.post('/markets/resolve', (req, res) => {
+  router.post('/markets/resolve', rateLimit(60, 60_000), (req, res) => {
     const parsed = marketTargetInputSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid market target' });
@@ -182,7 +184,7 @@ export function createApiRouter(env: ServerEnvConfig) {
       } catch {
         res.status(503).json({
           error:
-            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql, 0002_phase_2a1_security_hardening.sql, and 0003_strict_email_confirmation.sql in Supabase.',
+            'Database schema is not initialized yet. Apply ordered migrations 0001 through 0005 under supabase/migrations/ in Supabase.',
         });
       }
     })
@@ -300,6 +302,7 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.get(
     '/organizations/:orgId/gdpr-export',
     requireAuth,
+    rateLimit(10, 60_000),
     asyncHandler(async (req, res) => {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'admin');
       if (!access) return;
@@ -328,6 +331,7 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.post(
     '/organizations/:orgId/projects',
     requireAuth,
+    rateLimit(20, 60_000),
     asyncHandler(async (req, res) => {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'analyst');
       if (!access) return;
@@ -353,11 +357,12 @@ export function createApiRouter(env: ServerEnvConfig) {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'viewer');
       if (!access) return;
 
-      const project = await getProjectById(
-        req.supabase!,
-        access.organizationId,
-        String(req.params.projectId)
-      );
+      const projectId = String(req.params.projectId).trim();
+      if (!isValidUuid(projectId)) {
+        return res.status(400).json({ error: 'Invalid project ID format' });
+      }
+
+      const project = await getProjectById(req.supabase!, access.organizationId, projectId);
       if (!project) return res.status(404).json({ error: 'Project not found' });
       res.json({ project });
     })
@@ -366,9 +371,15 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.post(
     '/organizations/:orgId/projects/:projectId/markets',
     requireAuth,
+    rateLimit(30, 60_000),
     asyncHandler(async (req, res) => {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'analyst');
       if (!access) return;
+
+      const projectId = String(req.params.projectId).trim();
+      if (!isValidUuid(projectId)) {
+        return res.status(400).json({ error: 'Invalid project ID format' });
+      }
 
       const parsed = marketTargetInputSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -380,7 +391,7 @@ export function createApiRouter(env: ServerEnvConfig) {
       const updated = await addMarketTargetToProject(
         req.supabase!,
         access.organizationId,
-        String(req.params.projectId),
+        projectId,
         req.authUser!.id,
         parsed.data
       );
@@ -392,15 +403,24 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.post(
     '/organizations/:orgId/projects/:projectId/competitors',
     requireAuth,
+    rateLimit(30, 60_000),
     asyncHandler(async (req, res) => {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'analyst');
       if (!access) return;
 
-      const domainRaw = String(req.body?.domain ?? '');
-      const { normalizeCompetitorDomain } = await import('../lib/marketRules.ts');
+      const projectId = String(req.params.projectId).trim();
+      if (!isValidUuid(projectId)) {
+        return res.status(400).json({ error: 'Invalid project ID format' });
+      }
+
+      const parsed = addCompetitorSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid competitor domain' });
+      }
+
       let domain: string;
       try {
-        domain = normalizeCompetitorDomain(domainRaw);
+        domain = normalizeCompetitorDomain(parsed.data.domain);
       } catch (err) {
         return res.status(400).json({ error: (err as Error).message });
       }
@@ -408,9 +428,9 @@ export function createApiRouter(env: ServerEnvConfig) {
       const updated = await addCompetitorToProject(
         req.supabase!,
         access.organizationId,
-        String(req.params.projectId),
+        projectId,
         req.authUser!.id,
-        { domain, label: typeof req.body?.label === 'string' ? req.body.label.trim() : '' }
+        { domain, label: parsed.data.label }
       );
       if (!updated) return res.status(404).json({ error: 'Project not found' });
       res.status(201).json({ project: updated });
@@ -424,10 +444,15 @@ export function createApiRouter(env: ServerEnvConfig) {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'admin');
       if (!access) return;
 
+      const projectId = String(req.params.projectId).trim();
+      if (!isValidUuid(projectId)) {
+        return res.status(400).json({ error: 'Invalid project ID format' });
+      }
+
       const deleted = await deleteProjectForOrg(
         req.supabase!,
         access.organizationId,
-        String(req.params.projectId),
+        projectId,
         req.authUser!.id
       );
       if (!deleted) return res.status(404).json({ error: 'Project not found' });

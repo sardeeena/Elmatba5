@@ -82,6 +82,12 @@ export function createRequireAuth(env: ServerEnvConfig) {
   };
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string): boolean {
+  return UUID_REGEX.test(value.trim());
+}
+
 export async function getValidatedOrgAccess(
   req: AuthenticatedRequest,
   res: Response,
@@ -93,7 +99,13 @@ export async function getValidatedOrgAccess(
     return null;
   }
 
-  const membership = await getOrgMembership(req.supabase, orgId, req.authUser.id);
+  const trimmedOrgId = orgId.trim();
+  if (!isValidUuid(trimmedOrgId)) {
+    res.status(400).json({ error: 'Invalid organization ID format' });
+    return null;
+  }
+
+  const membership = await getOrgMembership(req.supabase, trimmedOrgId, req.authUser.id);
   if (!membership) {
     res.status(403).json({ error: 'Forbidden: You do not belong to this organization' });
     return null;

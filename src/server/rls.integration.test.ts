@@ -26,6 +26,8 @@ interface SuiteDiagnostics {
   migration0001Missing: boolean;
   migration0002Missing: boolean;
   migration0003Missing: boolean;
+  migration0004Missing: boolean;
+  migration0005Missing: boolean;
   emailConfirmationPreventsSessionCreation: boolean;
   unconfirmedRpcTestMode:
     | 'signup_unconfirmed_session'
@@ -193,6 +195,8 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
     migration0001Missing: false,
     migration0002Missing: false,
     migration0003Missing: false,
+    migration0004Missing: false,
+    migration0005Missing: false,
     emailConfirmationPreventsSessionCreation: false,
     unconfirmedRpcTestMode: 'skipped',
     executedTests: [],
@@ -223,6 +227,8 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
     diagnostics.migration0001Missing = true;
     diagnostics.migration0002Missing = true;
     diagnostics.migration0003Missing = true;
+    diagnostics.migration0004Missing = true;
+    diagnostics.migration0005Missing = true;
     const reason = `Migration 0001_initial_schema.sql not applied (${schema0001Error.message}).`;
     diagnostics.skippedTests.push({ name: 'all_live_rls_tests', reason });
     logDiagnostics(t, diagnostics);
@@ -358,13 +364,29 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       }
     }
 
-    // 4. Probe Migration 0002 & Migration 0003 independently
-    const [{ error: migration0002Err }, { error: migration0003Err }] = await Promise.all([
-      userA.client.rpc('max_owned_organizations_default'),
+    // 4. Probe Migrations 0002, 0003, 0004, and 0005 independently
+    // NOTE: Migration 0004 revokes authenticated EXECUTE from max_owned_organizations_default(),
+    // so 0002 is probed via resolve_market_target_meta (granted to authenticated in 0002 & 0004),
+    // and 0004 is verified when max_owned_organizations_default rejects authenticated with 42501.
+    const [
+      { error: migration0002Err },
+      { error: migration0003Err },
+      { error: maxOwnedPermErr },
+      { data: migration0005Ready, error: migration0005Err },
+    ] = await Promise.all([
+      userA.client.rpc('resolve_market_target_meta', {
+        p_country_code: 'EG',
+        p_language_code: 'ar',
+        p_search_engine_code: 'google',
+      }),
       userA.client.rpc('phase_2a1_1_strict_email_confirmation_ready'),
+      userA.client.rpc('max_owned_organizations_default'),
+      userA.client.rpc('phase_2a3_security_perf_ready'),
     ]);
     diagnostics.migration0002Missing = Boolean(migration0002Err);
     diagnostics.migration0003Missing = Boolean(migration0003Err);
+    diagnostics.migration0004Missing = !maxOwnedPermErr;
+    diagnostics.migration0005Missing = Boolean(migration0005Err) || migration0005Ready !== true;
 
     // Bind non-null references for TypeScript closures inside subtests
     const clientA = userA.client;
@@ -997,6 +1019,279 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
 
       diagnostics.executedTests.push(testName);
     });
+
+    // =========================================================================
+    // SUBTEST 7 — Function Permission Boundaries (0004)
+    // =========================================================================
+    await t.test('Function EXECUTE permission boundaries deny anon and internal helpers (0004)', async (sub) => {
+      const testName = 'Function EXECUTE permission boundaries deny anon and internal helpers (0004)';
+      if (diagnostics.migration0004Missing) {
+        const reason = 'Migration 0004_function_permission_hardening.sql is missing.';
+        diagnostics.skippedTests.push({ name: testName, reason });
+        sub.skip(reason);
+        return;
+      }
+
+      // Anon role must NOT execute application RPCs or RLS helpers
+      const [anonCreateOrg, anonIsMember, anonHasRole, anonCanView, anonResolve, anonStrictReady] =
+        await Promise.all([
+          probe.rpc('create_organization_atomic', {
+            p_name: 'Anon Forbidden',
+            p_slug: `anon-forbidden-${runSuffix}`,
+            p_business_type: 'agency',
+            p_billing_country_code: 'EG',
+          }),
+          probe.rpc('is_org_member', { p_org_id: orgA.id }),
+          probe.rpc('has_org_role', { p_org_id: orgA.id, p_roles: ['owner'] }),
+          probe.rpc('can_view_profile', { p_profile_id: userIdA }),
+          probe.rpc('resolve_market_target_meta', {
+            p_country_code: 'EG',
+            p_language_code: 'ar',
+            p_search_engine_code: 'google',
+          }),
+          probe.rpc('phase_2a1_1_strict_email_confirmation_ready'),
+        ]);
+
+      assert.ok(anonCreateOrg.error, 'anon must be denied create_organization_atomic');
+      assert.ok(anonIsMember.error, 'anon must be denied is_org_member');
+      assert.ok(anonHasRole.error, 'anon must be denied has_org_role');
+      assert.ok(anonCanView.error, 'anon must be denied can_view_profile');
+      assert.ok(anonResolve.error, 'anon must be denied resolve_market_target_meta');
+      assert.ok(anonStrictReady.error, 'anon must be denied phase_2a1_1_strict_email_confirmation_ready');
+
+      // Authenticated role must NOT execute internal/trigger helpers
+      const [authMaxOrgs, authHandleUser, authCrossOrgTrigger] = await Promise.all([
+        clientA.rpc('max_owned_organizations_default'),
+        clientA.rpc('handle_new_user'),
+        clientA.rpc('prevent_cross_org_reassignment'),
+      ]);
+
+      assert.ok(authMaxOrgs.error, 'authenticated must be denied max_owned_organizations_default');
+      assert.ok(authHandleUser.error, 'authenticated must be denied handle_new_user');
+      assert.ok(authCrossOrgTrigger.error, 'authenticated must be denied prevent_cross_org_reassignment');
+
+      diagnostics.executedTests.push(testName);
+    });
+
+    // =========================================================================
+    // SUBTEST 8 — Phase 2A.3 Billing, Usage, Invite, Profile & Quota Hardening (0005)
+    // =========================================================================
+    await t.test(
+      'Phase 2A.3 billing/usage/invite/profile immutability and concurrent project quota enforcement (0005)',
+      async (sub) => {
+        const testName =
+          'Phase 2A.3 billing/usage/invite/profile immutability and concurrent project quota enforcement (0005)';
+        if (diagnostics.migration0005Missing) {
+          const reason = 'Migration 0005_phase_2a3_security_and_performance.sql is missing.';
+          diagnostics.skippedTests.push({ name: testName, reason });
+          sub.skip(reason);
+          return;
+        }
+
+        // 1. Owner/Admin cannot self-upgrade plan_id or subscription_status directly
+        const { error: planTamperErr } = await clientA
+          .from('organizations')
+          .update({ plan_id: 'agency', subscription_status: 'active' })
+          .eq('id', orgA.id);
+        assert.ok(planTamperErr, 'Owner must not self-upgrade organization plan_id or subscription_status');
+
+        // 2. Client cannot insert or reset metered usage_records
+        const { error: usageResetErr, data: usageResetData } = await clientA
+          .from('usage_records')
+          .update({ ai_credits_used: 0, crawls_run: 0 })
+          .eq('organization_id', orgA.id)
+          .select('id');
+        assert.ok(usageResetErr || (usageResetData?.length ?? 0) === 0, 'Client must not reset usage_records');
+
+        // 3. Authenticated user cannot spoof profiles.email or profiles.id on INSERT, UPSERT, or UPDATE
+        const { error: profileInsertEmailSpoofErr } = await clientA.from('profiles').insert({
+          id: userIdA,
+          email: 'spoofed-insert@example.com',
+          full_name: 'Spoof Insert',
+          preferred_locale: 'en',
+        });
+        assert.ok(
+          profileInsertEmailSpoofErr,
+          'Authenticated user must not insert profile with spoofed email'
+        );
+        assert.match(
+          profileInsertEmailSpoofErr.message,
+          /email/i,
+          'BEFORE INSERT trigger must reject spoofed email explicitly'
+        );
+
+        const { error: profileInsertOtherUserErr } = await clientA.from('profiles').insert({
+          id: crypto.randomUUID(),
+          email: 'other-user@example.com',
+          full_name: 'Other User',
+          preferred_locale: 'en',
+        });
+        assert.ok(
+          profileInsertOtherUserErr,
+          'Authenticated user must not insert a profile belonging to another user id'
+        );
+
+        const { error: profileUpsertSpoofErr } = await clientA.from('profiles').upsert(
+          {
+            id: userIdA,
+            email: 'spoofed-upsert@example.com',
+            full_name: 'Spoof Upsert',
+            preferred_locale: 'en',
+          },
+          { onConflict: 'id' }
+        );
+        assert.ok(profileUpsertSpoofErr, 'Authenticated user must not spoof email via upsert');
+
+        const { error: profileEmailSpoofErr } = await clientA
+          .from('profiles')
+          .update({ email: 'spoofed-ceo@example.com' })
+          .eq('id', userIdA);
+        assert.ok(profileEmailSpoofErr, 'Authenticated user must not alter profiles.email directly');
+
+        // Legitimate same-email upsert (ensureUserProfile compatibility) and locale update succeed
+        const { error: legitProfileUpsertErr } = await clientA
+          .from('profiles')
+          .upsert(
+            {
+              id: userIdA,
+              email: emailA.toLowerCase(),
+              full_name: 'User A Owner',
+              preferred_locale: 'en',
+            },
+            { onConflict: 'id' }
+          )
+          .select('id')
+          .single();
+        assert.ifError(legitProfileUpsertErr);
+
+        const { data: localeUpdated, error: localeUpdErr } = await clientA
+          .from('profiles')
+          .update({ preferred_locale: 'ar' })
+          .eq('id', userIdA)
+          .select('preferred_locale')
+          .single();
+        assert.ifError(localeUpdErr);
+        assert.equal(localeUpdated.preferred_locale, 'ar');
+
+        await clientA.from('profiles').update({ preferred_locale: 'en' }).eq('id', userIdA);
+
+        // 4. Member cannot insert unattributed (actor_user_id: null) audit_logs directly
+        const { error: nullActorAuditErr } = await clientA.from('audit_logs').insert({
+          organization_id: orgA.id,
+          actor_user_id: null,
+          action: 'spoofed.system.event',
+          entity_type: 'organization',
+          entity_id: orgA.id,
+        });
+        assert.ok(nullActorAuditErr, 'Client must not insert null-actor audit_logs entries');
+
+        // 5. Invitation updates restricted strictly to pending -> revoked; immutable token/email
+        const rawInvToken = crypto.randomBytes(32).toString('hex');
+        const hashInvToken = crypto.createHash('sha256').update(rawInvToken).digest('hex');
+        const { data: invRow, error: invCreateErr } = await clientA
+          .from('organization_invitations')
+          .insert({
+            organization_id: orgA.id,
+            email: `invite-lock-${runSuffix}@example.com`,
+            role: 'viewer',
+            token_hash: hashInvToken,
+            status: 'pending',
+            invited_by: userIdA,
+            expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+          })
+          .select('id')
+          .single();
+        assert.ifError(invCreateErr);
+
+        const { error: invRoleTamperErr } = await clientA
+          .from('organization_invitations')
+          .update({ role: 'admin' })
+          .eq('id', invRow.id);
+        assert.ok(invRoleTamperErr, 'Owner must not alter existing invitation role/metadata');
+
+        const { error: legitRevokeErr } = await clientA
+          .from('organization_invitations')
+          .update({ status: 'revoked' })
+          .eq('id', invRow.id);
+        assert.ifError(legitRevokeErr);
+
+        const { error: reopenRevokedErr } = await clientA
+          .from('organization_invitations')
+          .update({ status: 'pending' })
+          .eq('id', invRow.id);
+        assert.ok(reopenRevokedErr, 'Revoked invitation must not be reopened to pending');
+
+        // 6. Concurrent project inserts enforce starter max_projects = 2 atomically (Org A already has projA = 1)
+        const [projRace1, projRace2] = await Promise.all([
+          clientA
+            .from('projects')
+            .insert({
+              organization_id: orgA.id,
+              name: 'Concurrent Project 2A',
+              website_url: 'https://race-2a.example',
+              primary_country_code: 'EG',
+              created_by: userIdA,
+            })
+            .select('id')
+            .single(),
+          clientA
+            .from('projects')
+            .insert({
+              organization_id: orgA.id,
+              name: 'Concurrent Project 2B',
+              website_url: 'https://race-2b.example',
+              primary_country_code: 'EG',
+              created_by: userIdA,
+            })
+            .select('id')
+            .single(),
+        ]);
+
+        const projSuccessCount = [projRace1, projRace2].filter((r) => !r.error).length;
+        assert.equal(
+          projSuccessCount,
+          1,
+          'Starter plan max_projects = 2 must allow at most 1 of 2 concurrent inserts when 1 already exists'
+        );
+
+        // Clean up the newly inserted race winner so Org A remains clean
+        for (const r of [projRace1, projRace2]) {
+          if (!r.error && r.data?.id) {
+            await clientA.from('projects').delete().eq('id', r.data.id);
+          }
+        }
+
+        // 7. New 0005 trigger functions & catalog-verifying readiness RPC follow strict permissions
+        const [
+          authReadyRes,
+          anonReadyErr,
+          authQuotaTriggerErr,
+          authProfileTriggerErr,
+          authOrgTriggerErr,
+          authInvTriggerErr,
+        ] = await Promise.all([
+          clientA.rpc('phase_2a3_security_perf_ready'),
+          probe.rpc('phase_2a3_security_perf_ready'),
+          clientA.rpc('enforce_project_quota_on_insert'),
+          clientA.rpc('protect_profile_identity_fields'),
+          clientA.rpc('protect_organization_immutable_fields'),
+          clientA.rpc('protect_organization_invitation_integrity'),
+        ]);
+        assert.ifError(authReadyRes.error);
+        assert.equal(
+          authReadyRes.data,
+          true,
+          'phase_2a3_security_perf_ready() must verify all 0005 catalog objects and return true'
+        );
+        assert.ok(anonReadyErr.error, 'anon must be denied phase_2a3_security_perf_ready');
+        assert.ok(authQuotaTriggerErr.error, 'authenticated must be denied enforce_project_quota_on_insert');
+        assert.ok(authProfileTriggerErr.error, 'authenticated must be denied protect_profile_identity_fields');
+        assert.ok(authOrgTriggerErr.error, 'authenticated must be denied protect_organization_immutable_fields');
+        assert.ok(authInvTriggerErr.error, 'authenticated must be denied protect_organization_invitation_integrity');
+
+        diagnostics.executedTests.push(testName);
+      }
+    );
   } finally {
     // Safe runSuffix-scoped cleanup — never touches any real customer data
     if (userA && projAId) {

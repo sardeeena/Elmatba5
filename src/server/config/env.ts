@@ -64,6 +64,18 @@ export function parseAllowedOrigins(appUrl: string, corsOriginRaw: string | unde
   return Array.from(origins);
 }
 
+export function isServiceRoleJwt(token: string): boolean {
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payloadRaw = Buffer.from(parts[1], 'base64url').toString('utf8');
+    const payload = JSON.parse(payloadRaw) as { role?: unknown };
+    return payload?.role === 'service_role';
+  } catch {
+    return false;
+  }
+}
+
 export function loadAndValidateEnv(envSource: NodeJS.ProcessEnv = process.env): ServerEnvConfig {
   const nodeEnv = envSource.NODE_ENV ?? 'development';
   const isProduction = nodeEnv === 'production';
@@ -75,10 +87,10 @@ export function loadAndValidateEnv(envSource: NodeJS.ProcessEnv = process.env): 
   const sessionSecret = (envSource.SESSION_SECRET ?? '').trim();
   const appUrl = (envSource.APP_URL ?? '').trim();
 
-  // Safety guard: never permit a Supabase secret or service_role key to be treated as a publishable key
-  if (supabasePublishableKey.startsWith('sb_secret_')) {
+  // Safety guard: never permit a Supabase secret or legacy service_role JWT to be used as a publishable key
+  if (supabasePublishableKey.startsWith('sb_secret_') || isServiceRoleJwt(supabasePublishableKey)) {
     throw new Error(
-      'Invalid configuration: SUPABASE_PUBLISHABLE_KEY appears to be a secret key. Only a Publishable key is permitted.'
+      'Invalid configuration: SUPABASE_PUBLISHABLE_KEY appears to be a secret or service_role key. Only a Publishable key is permitted.'
     );
   }
 

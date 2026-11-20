@@ -51,6 +51,11 @@ export const acceptInvitationSchema = z.object({
   token: z.string().trim().min(16, 'Valid invitation token is required').max(256),
 });
 
+export const addCompetitorSchema = z.object({
+  domain: z.string().trim().min(3, 'Competitor domain is required').max(150),
+  label: z.string().trim().max(80).default(''),
+});
+
 export const contactLeadSchema = z.object({
   fullName: z.string().trim().min(2, 'Full name is required').max(100),
   email: z.string().trim().email('Valid email is required'),
