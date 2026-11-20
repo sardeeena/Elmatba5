@@ -192,7 +192,7 @@ function skipOrFailInCi(context: test.TestContext, reason: string): void {
   if (process.env.CI === 'true') {
     throw new Error(`CI must execute the live PostgreSQL/RLS suite; skip is not allowed: ${reason}`);
   }
-  contexskipOrFailInCi(t, reason);
+  context.skip(reason);
 }
 
 test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', async (t) => {
