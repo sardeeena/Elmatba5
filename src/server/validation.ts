@@ -1,15 +1,7 @@
 import { z } from 'zod';
 
-export const registerSchema = z.object({
-  email: z.string().trim().email('Valid email is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(128),
-  fullName: z.string().trim().min(2, 'Full name is required').max(100),
-  preferredLocale: z.enum(['en', 'ar']).default('en'),
-});
-
-export const loginSchema = z.object({
-  email: z.string().trim().email('Valid email is required'),
-  password: z.string().min(1, 'Password is required'),
+export const updateLocaleSchema = z.object({
+  locale: z.enum(['en', 'ar']),
 });
 
 export const createOrgSchema = z.object({
@@ -51,8 +43,12 @@ export const onboardingSchema = z.object({
 });
 
 export const inviteMemberSchema = z.object({
-  email: z.string().trim().email(),
+  email: z.string().trim().email('Valid email is required'),
   role: z.enum(['admin', 'analyst', 'viewer']),
+});
+
+export const acceptInvitationSchema = z.object({
+  token: z.string().trim().min(16, 'Valid invitation token is required').max(256),
 });
 
 export const contactLeadSchema = z.object({

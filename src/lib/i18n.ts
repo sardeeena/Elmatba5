@@ -35,13 +35,25 @@ export interface Dictionary {
     loginSub: string;
     registerTitle: string;
     registerSub: string;
+    forgotTitle: string;
+    forgotSub: string;
+    recoveryTitle: string;
+    recoverySub: string;
     email: string;
     password: string;
+    newPassword: string;
     fullName: string;
     signIn: string;
     createAccount: string;
+    sendResetLink: string;
+    updatePassword: string;
+    forgotPasswordLink: string;
+    backToLogin: string;
     switchToRegister: string;
     switchToLogin: string;
+    confirmEmailNotice: string;
+    resetSentNotice: string;
+    passwordUpdatedNotice: string;
   };
   onboarding: {
     title: string;
@@ -82,10 +94,6 @@ export interface Dictionary {
     billing: string;
     settings: string;
     logout: string;
-    demoBannerTitle: string;
-    demoBannerBody: string;
-    liveMode: string;
-    demoMode: string;
     newProject: string;
     noProjectsTitle: string;
     noProjectsBody: string;
@@ -129,16 +137,30 @@ export const DICT: Record<Locale, Dictionary> = {
     },
     auth: {
       loginTitle: 'Step back into EL MATBA5',
-      loginSub: 'Sign in to access your agency organizations and live client projects.',
+      loginSub: 'Sign in with Supabase Auth to access your organizations and live client projects.',
       registerTitle: 'Open your growth kitchen',
-      registerSub: 'Create your account in seconds. No credit card required for Phase 1.',
+      registerSub: 'Create your account in seconds. No credit card required.',
+      forgotTitle: 'Recover your kitchen access',
+      forgotSub: 'Enter your work email and we will send a secure password recovery link.',
+      recoveryTitle: 'Set your new password',
+      recoverySub: 'Choose a strong password of at least 8 characters for your account.',
       email: 'Work Email',
       password: 'Password',
+      newPassword: 'New Password',
       fullName: 'Full Name',
       signIn: 'Sign In',
       createAccount: 'Create Account',
+      sendResetLink: 'Send Recovery Link',
+      updatePassword: 'Save New Password',
+      forgotPasswordLink: 'Forgot password?',
+      backToLogin: 'Back to Sign In',
       switchToRegister: 'New to EL MATBA5? Create an account',
       switchToLogin: 'Already have a kitchen? Log in',
+      confirmEmailNotice:
+        'Account created! Please check your email inbox and click the confirmation link before signing in.',
+      resetSentNotice:
+        'If an account exists for that email address, a password recovery link has been sent.',
+      passwordUpdatedNotice: 'Your password has been updated. Opening your workspace...',
     },
     onboarding: {
       title: 'Set up your EL MATBA5 kitchen',
@@ -179,11 +201,6 @@ export const DICT: Record<Locale, Dictionary> = {
       billing: 'Billing & Usage',
       settings: 'Settings & GDPR',
       logout: 'Log out',
-      demoBannerTitle: 'DEMONSTRATION DATA MODE',
-      demoBannerBody:
-        'Sample telemetry is active so you can preview charts and workflows. Switch to Live Workspace to view your real persisted state without simulated metrics.',
-      liveMode: 'Live Workspace',
-      demoMode: 'Demo Preview',
       newProject: 'New Project',
       noProjectsTitle: 'No projects cooked up yet',
       noProjectsBody:
@@ -225,16 +242,30 @@ export const DICT: Record<Locale, Dictionary> = {
     },
     auth: {
       loginTitle: 'ارجع إلى المطبخ',
-      loginSub: 'سجّل الدخول للوصول إلى مؤسساتك ومشاريع العملاء.',
+      loginSub: 'سجّل الدخول عبر Supabase Auth للوصول إلى مؤسساتك ومشاريع العملاء.',
       registerTitle: 'افتح مطبخ النمو الخاص بك',
-      registerSub: 'أنشئ حسابك في ثوانٍ بدون بطاقة ائتمان في المرحلة الأولى.',
+      registerSub: 'أنشئ حسابك في ثوانٍ بدون بطاقة ائتمان.',
+      forgotTitle: 'استعادة الدخول إلى المطبخ',
+      forgotSub: 'أدخل بريدك الإلكتروني وسنرسل لك رابط استعادة كلمة المرور.',
+      recoveryTitle: 'تعيين كلمة مرور جديدة',
+      recoverySub: 'اختر كلمة مرور قوية لا تقل عن 8 أحرف لحسابك.',
       email: 'البريد الإلكتروني للعمل',
       password: 'كلمة المرور',
+      newPassword: 'كلمة المرور الجديدة',
       fullName: 'الاسم الكامل',
       signIn: 'تسجيل الدخول',
       createAccount: 'إنشاء حساب',
+      sendResetLink: 'إرسال رابط الاستعادة',
+      updatePassword: 'حفظ كلمة المرور الجديدة',
+      forgotPasswordLink: 'نسيت كلمة المرور؟',
+      backToLogin: 'العودة لتسجيل الدخول',
       switchToRegister: 'جديد في المطبخ؟ أنشئ حساباً',
       switchToLogin: 'لديك حساب بالفعل؟ سجّل الدخول',
+      confirmEmailNotice:
+        'تم إنشاء الحساب! يرجى التحقق من بريدك الإلكتروني والنقر على رابط التفعيل قبل تسجيل الدخول.',
+      resetSentNotice:
+        'إذا كان هناك حساب مرتبط بهذا البريد، فقد تم إرسال رابط استعادة كلمة المرور.',
+      passwordUpdatedNotice: 'تم تحديث كلمة المرور بنجاح. جاري فتح مساحة العمل...',
     },
     onboarding: {
       title: 'جهّز مطبخ EL MATBA5',
@@ -275,11 +306,6 @@ export const DICT: Record<Locale, Dictionary> = {
       billing: 'الاشتراك والاستهلاك',
       settings: 'الإعدادات و GDPR',
       logout: 'تسجيل الخروج',
-      demoBannerTitle: 'وضع البيانات التجريبية',
-      demoBannerBody:
-        'يتم عرض بيانات توضيحية لمعاينة المخططات وسير العمل. انتقل إلى الوضع الفعلي لرؤية بيانات مشاريعك المحفوظة دون أي أرقام محاكاة.',
-      liveMode: 'الوضع الفعلي',
-      demoMode: 'معاينة تجريبية',
       newProject: 'مشروع جديد',
       noProjectsTitle: 'لا توجد مشاريع بعد',
       noProjectsBody: 'أنشئ مشروعك الأول مع تحديد الدول واللغات ومحركات البحث المستهدفة.',

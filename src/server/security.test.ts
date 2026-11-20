@@ -1,106 +1,137 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  getDb,
-  createUser,
-  createOrganization,
-  createProject,
-  getProjectById,
-  listProjectsForOrg,
-  getOrgMembership,
-  deleteProjectForOrg,
-} from './db.ts';
-import {
-  hashPassword,
-  verifyPassword,
-  signSessionToken,
-  verifySessionToken,
-} from './security.ts';
+import express from 'express';
+import http from 'node:http';
+import { loadAndValidateEnv } from './config/env.ts';
+import { extractBearerToken } from './middleware/auth.ts';
+import { createCorsMiddleware, InMemoryRateLimitStore } from './middleware/security.ts';
+import { createApiRouter } from './routes.ts';
+import { generateInviteToken, hashInviteToken, slugifyOrgName } from './security.ts';
 
-test('Password hashing uses per-user salt and rejects incorrect passwords', () => {
-  const hash1 = hashPassword('CairoGrowth!2026');
-  const hash2 = hashPassword('CairoGrowth!2026');
-  assert.notEqual(hash1, hash2);
-  assert.equal(verifyPassword('CairoGrowth!2026', hash1), true);
-  assert.equal(verifyPassword('WrongPassword', hash1), false);
+test('loadAndValidateEnv fails closed in production when required vars are missing or weak', () => {
+  assert.throws(
+    () =>
+      loadAndValidateEnv({
+        NODE_ENV: 'production',
+        SUPABASE_URL: '',
+        SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ok',
+        SESSION_SECRET: 'a_very_long_random_secret_over_32_characters_ok',
+      }),
+    /SUPABASE_URL/
+  );
+
+  assert.throws(
+    () =>
+      loadAndValidateEnv({
+        NODE_ENV: 'production',
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: '',
+        SESSION_SECRET: 'a_very_long_random_secret_over_32_characters_ok',
+      }),
+    /SUPABASE_PUBLISHABLE_KEY/
+  );
+
+  assert.throws(
+    () =>
+      loadAndValidateEnv({
+        NODE_ENV: 'production',
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ok',
+        SESSION_SECRET: 'short',
+      }),
+    /SESSION_SECRET/
+  );
 });
 
-test('Session token signing rejects tampered or expired tokens', () => {
-  const secret = 'test-secret-key-minimum-32-chars-long-ok';
-  const validToken = signSessionToken({ userId: 'u-1', email: 'founder@elmatba5.com' }, secret, 60_000);
-  const decoded = verifySessionToken(validToken, secret);
-  assert.equal(decoded?.userId, 'u-1');
-
-  const tampered = validToken.slice(0, -3) + 'xxx';
-  assert.equal(verifySessionToken(tampered, secret), null);
-
-  const expired = signSessionToken({ userId: 'u-1', email: 'founder@elmatba5.com' }, secret, -1000);
-  assert.equal(verifySessionToken(expired, secret), null);
+test('loadAndValidateEnv rejects accidental Supabase secret keys in SUPABASE_PUBLISHABLE_KEY', () => {
+  assert.throws(
+    () =>
+      loadAndValidateEnv({
+        NODE_ENV: 'development',
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'sb_secret_never_allow_this',
+      }),
+    /secret key/i
+  );
 });
 
-test('Multi-tenant isolation prevents cross-organization project reads and deletes', () => {
-  const db = getDb(':memory:');
+test('Invitation tokens generate high-entropy raw tokens with deterministic SHA-256 hashes', () => {
+  const raw1 = generateInviteToken();
+  const raw2 = generateInviteToken();
+  assert.notEqual(raw1, raw2);
+  assert.equal(raw1.length, 64);
 
-  const userA = createUser(db, {
-    email: 'agency-a@cairo.eg',
-    passwordHash: hashPassword('SecretA!123'),
-    fullName: 'Founder A',
-    preferredLocale: 'en',
-  });
-  const userB = createUser(db, {
-    email: 'agency-b@alex.eg',
-    passwordHash: hashPassword('SecretB!123'),
-    fullName: 'Founder B',
-    preferredLocale: 'ar',
-  });
+  const hashA = hashInviteToken(raw1);
+  const hashB = hashInviteToken(`  ${raw1}  `);
+  assert.equal(hashA, hashB);
+  assert.equal(hashA.length, 64);
+  assert.notEqual(hashA, raw1);
+});
 
-  const orgA = createOrganization(db, {
-    name: 'Nile Digital Agency',
-    slug: 'nile-digital',
-    businessType: 'agency',
-    billingCountryCode: 'EG',
-    ownerUserId: userA.id,
-  });
+test('extractBearerToken parses standard Bearer headers and rejects malformed values', () => {
+  assert.equal(extractBearerToken('Bearer abc.def.ghi'), 'abc.def.ghi');
+  assert.equal(extractBearerToken('bearer token123'), 'token123');
+  assert.equal(extractBearerToken('Basic abc'), null);
+  assert.equal(extractBearerToken('Bearer'), null);
+  assert.equal(extractBearerToken(undefined), null);
+});
 
-  const orgB = createOrganization(db, {
-    name: 'Red Sea Commerce',
-    slug: 'red-sea',
-    businessType: 'ecommerce',
-    billingCountryCode: 'EG',
-    ownerUserId: userB.id,
-  });
+test('slugifyOrgName builds clean URL-safe slugs with random suffix', () => {
+  const slug = slugifyOrgName('Cairo Digital Studio!');
+  assert.match(slug, /^cairo-digital-studio-[a-f0-9]{6}$/);
+});
 
-  const projectA = createProject(db, {
-    organizationId: orgA.id,
-    createdByUserId: userA.id,
-    name: 'Export Germany Campaign',
-    websiteUrl: 'https://export-eg.com',
-    businessDescription: 'Egyptian industrial exports to EU & Russia',
-    industry: 'Manufacturing',
-    targetAudience: 'EU B2B buyers',
-    primaryCountryCode: 'EG',
-    businessGoals: 'Grow German and Russian organic traffic',
-    marketTargets: [
-      { countryCode: 'EG', languageCode: 'ar', searchEngineCode: 'google', device: 'both' },
-      { countryCode: 'DE', languageCode: 'de', searchEngineCode: 'google', device: 'desktop' },
-      { countryCode: 'RU', languageCode: 'ru', searchEngineCode: 'yandex', device: 'both' },
-    ],
-    competitors: [{ domain: 'rival-de.com', label: 'German Rival' }],
+test('InMemoryRateLimitStore blocks requests exceeding window threshold', () => {
+  const store = new InMemoryRateLimitStore();
+  assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
+  assert.equal(store.consume('ip1', 2, 10_000).allowed, true);
+  const third = store.consume('ip1', 2, 10_000);
+  assert.equal(third.allowed, false);
+  assert.ok(third.retryAfterSec >= 1);
+});
+
+test('API router rejects unauthenticated requests and blocked CORS origins', async () => {
+  const env = loadAndValidateEnv({
+    NODE_ENV: 'production',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_key_only',
+    SESSION_SECRET: '0123456789abcdef0123456789abcdef',
+    APP_URL: 'https://app.elmatba5.com',
   });
 
-  // Org A sees its project with 3 independent market targets
-  const orgAProjects = listProjectsForOrg(db, orgA.id);
-  assert.equal(orgAProjects.length, 1);
-  assert.equal(orgAProjects[0].marketTargets.length, 3);
-  const ruTarget = orgAProjects[0].marketTargets.find((t) => t.countryCode === 'RU');
-  assert.equal(ruTarget?.assignedProvider, 'yandex_search_api + yandex_webmaster');
+  const app = express();
+  app.use(createCorsMiddleware(env));
+  app.use(express.json());
+  app.use('/api', createApiRouter(env));
 
-  // Org B must NOT be able to read, delete, or verify membership in Org A
-  assert.equal(getOrgMembership(db, orgA.id, userB.id), null);
-  assert.equal(getProjectById(db, orgB.id, projectA.id), null);
-  assert.equal(listProjectsForOrg(db, orgB.id).length, 0);
-  assert.equal(deleteProjectForOrg(db, orgB.id, projectA.id, userB.id), false);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
 
-  // Project A still intact
-  assert.ok(getProjectById(db, orgA.id, projectA.id));
+  try {
+    // 1. Public config never leaks SESSION_SECRET
+    const cfgRes = await fetch(`${baseUrl}/api/config/public`);
+    assert.equal(cfgRes.status, 200);
+    const cfgJson = (await cfgRes.json()) as Record<string, unknown>;
+    assert.equal(cfgJson.configured, true);
+    assert.equal('sessionSecret' in cfgJson, false);
+
+    // 2. Protected route without Authorization header -> 401
+    const unauthRes = await fetch(`${baseUrl}/api/profile`);
+    assert.equal(unauthRes.status, 401);
+
+    // 3. Disallowed CORS origin on POST -> 403
+    const corsRes = await fetch(`${baseUrl}/api/contact`, {
+      method: 'POST',
+      headers: {
+        Origin: 'https://evil-site.example',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(corsRes.status, 403);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

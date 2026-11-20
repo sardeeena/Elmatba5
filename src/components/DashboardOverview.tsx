@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, ArrowUpRight, Globe, Plus } from 'lucide-react';
-import { DEMO_DATASET } from '../data/demoData';
+import { ArrowUpRight, Globe, Plus } from 'lucide-react';
 import { DICT } from '../lib/i18n';
 import type {
   Locale,
@@ -16,8 +15,6 @@ interface DashboardOverviewProps {
   plan: PlanDefinition | null;
   usage: UsageSummary;
   projects: Project[];
-  demoMode: boolean;
-  onToggleDemoMode: (val: boolean) => void;
   onCreateProject: () => void;
   onOpenProject: (projectId: string) => void;
   onGoToSection: (section: string) => void;
@@ -29,8 +26,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   plan,
   usage,
   projects,
-  demoMode,
-  onToggleDemoMode,
   onCreateProject,
   onOpenProject,
   onGoToSection,
@@ -57,53 +52,29 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     return true;
   });
 
-  const uniqueCountries = Array.from(new Set(projects.flatMap((p) => p.marketTargets.map((m) => m.countryCode))));
+  const uniqueCountries = Array.from(
+    new Set(projects.flatMap((p) => p.marketTargets.map((m) => m.countryCode)))
+  );
 
   return (
     <div className="space-y-6">
-      {/* Mode Banner */}
-      <div
-        className={`rounded-xl border-2 border-[#111111] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-          demoMode ? 'bg-[#83FD80]/25' : 'bg-[#FDFDFF]'
-        }`}
-      >
+      {/* Live PostgreSQL + RLS Status Banner */}
+      <div className="rounded-xl border-2 border-[#111111] p-4 bg-[#FDFDFF] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="text-xs font-extrabold uppercase tracking-wider text-[#F42902]">
-            {demoMode
-              ? t.demoBannerTitle
-              : locale === 'ar'
-              ? 'الوضع الفعلي للمؤسسة (بيانات حقيقية محفوظة)'
-              : 'LIVE MULTI-TENANT WORKSPACE'}
+            {locale === 'ar'
+              ? 'مساحة عمل فعلية معزولة (PostgreSQL + RLS)'
+              : 'LIVE MULTI-TENANT WORKSPACE (POSTGRESQL + RLS)'}
           </div>
           <p className="text-xs text-[#52525B]">
-            {demoMode
-              ? t.demoBannerBody
-              : locale === 'ar'
-              ? 'تعرض هذه الشاشة مشاريعك الحقيقية فقط. لا يتم اختلاق أرقام ترتيب أو زيارات قبل ربط مزودي البحث في المرحلة الثانية.'
-              : 'Showing strictly persisted organization records. Search rankings and crawl metrics remain empty until live providers are connected in Phase 2+.'}
+            {locale === 'ar'
+              ? 'تعرض هذه الشاشة سجلات مؤسستك المحفوظة فقط. تتبع الترتيب والفحص التقني متاح فور ربط مزودي البيانات في المراحل القادمة.'
+              : 'Showing strictly persisted organization records enforced by PostgreSQL Row Level Security. Live rank tracking and crawls activate as Phase 2B+ providers are connected.'}
           </p>
         </div>
-
-        <div className="inline-flex rounded-lg border border-[#111111] p-0.5 bg-[#FDFDFF] shrink-0 self-start">
-          <button
-            type="button"
-            onClick={() => onToggleDemoMode(false)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer ${
-              !demoMode ? 'bg-[#111111] text-[#FDFDFF]' : 'text-[#52525B]'
-            }`}
-          >
-            {t.liveMode}
-          </button>
-          <button
-            type="button"
-            onClick={() => onToggleDemoMode(true)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md cursor-pointer ${
-              demoMode ? 'bg-[#83FD80] text-[#111111]' : 'text-[#52525B]'
-            }`}
-          >
-            {t.demoMode}
-          </button>
-        </div>
+        <span className="px-3 py-1.5 rounded-md bg-[#83FD80] text-[#111111] border border-[#111111] text-xs font-bold shrink-0 self-start">
+          {organization.role.toUpperCase()} · {organization.planId.toUpperCase()}
+        </span>
       </div>
 
       {/* Filters Toolbar */}
@@ -196,59 +167,42 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
       </div>
 
-      {/* KPI Strip */}
-      {demoMode ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {DEMO_DATASET.overviewMetrics.map((m) => (
-            <div
-              key={m.id}
-              className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-2"
-            >
-              <div className="text-xs font-semibold text-[#52525B]">
-                {locale === 'ar' ? m.labelAr : m.labelEn}
-              </div>
-              <div className="font-display text-2xl font-extrabold tabular-nums">{m.value}</div>
-              <div className="text-xs font-mono text-[#F42902]">{m.delta}</div>
-            </div>
-          ))}
+      {/* KPI Strip — Strictly Live Persisted Counts */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
+          <div className="text-xs font-semibold text-[#52525B]">Active Projects</div>
+          <div className="font-display text-2xl font-extrabold tabular-nums">
+            {usage.projectsCount} / {plan?.maxProjects ?? '—'}
+          </div>
+          <div className="text-xs text-[#52525B]">{organization.name}</div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
-            <div className="text-xs font-semibold text-[#52525B]">Active Projects</div>
-            <div className="font-display text-2xl font-extrabold tabular-nums">
-              {usage.projectsCount} / {plan?.maxProjects ?? '—'}
-            </div>
-            <div className="text-xs text-[#52525B]">{organization.name}</div>
-          </div>
 
-          <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
-            <div className="text-xs font-semibold text-[#52525B]">Configured Market Targets</div>
-            <div className="font-display text-2xl font-extrabold tabular-nums">
-              {visibleTargets.length}
-            </div>
-            <div className="text-xs text-[#52525B]">Across {uniqueCountries.length} country/ies</div>
+        <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
+          <div className="text-xs font-semibold text-[#52525B]">Configured Market Targets</div>
+          <div className="font-display text-2xl font-extrabold tabular-nums">
+            {visibleTargets.length}
           </div>
+          <div className="text-xs text-[#52525B]">Across {uniqueCountries.length} country/ies</div>
+        </div>
 
-          <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
-            <div className="text-xs font-semibold text-[#52525B]">Tracked Keywords (Live)</div>
-            <div className="font-display text-2xl font-extrabold tabular-nums">
-              {usage.keywordsTracked} / {plan?.maxKeywords ?? '—'}
-            </div>
-            <div className="text-xs text-[#F42902]">Connect Phase 2 provider to track</div>
+        <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
+          <div className="text-xs font-semibold text-[#52525B]">Tracked Keywords (Live)</div>
+          <div className="font-display text-2xl font-extrabold tabular-nums">
+            {usage.keywordsTracked} / {plan?.maxKeywords ?? '—'}
           </div>
+          <div className="text-xs text-[#F42902]">Coming in Phase 2B provider integration</div>
+        </div>
 
-          <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
-            <div className="text-xs font-semibold text-[#52525B]">Subscription Status</div>
-            <div className="font-display text-2xl font-extrabold uppercase">
-              {organization.planId}
-            </div>
-            <div className="text-xs font-mono text-[#52525B]">
-              {organization.subscriptionStatus} · Billing {organization.billingCountryCode}
-            </div>
+        <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-5 space-y-1.5">
+          <div className="text-xs font-semibold text-[#52525B]">Subscription Status</div>
+          <div className="font-display text-2xl font-extrabold uppercase">
+            {organization.planId}
+          </div>
+          <div className="text-xs font-mono text-[#52525B]">
+            {organization.subscriptionStatus} · Billing {organization.billingCountryCode}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Main Content Split */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -304,7 +258,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           )}
         </div>
 
-        {/* Recommended Next Actions & Demo/Live Clarity */}
+        {/* Recommended Next Actions */}
         <div className="lg:col-span-5 bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-6 space-y-4">
           <h2 className="font-display text-xl font-extrabold">
             {locale === 'ar' ? 'الخطوات الموصى بها' : 'Recommended Next Actions'}
@@ -328,9 +282,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
             <div className="py-3.5 flex items-start justify-between gap-3">
               <div>
-                <div className="font-bold">Connect Search Console & Crawlers</div>
+                <div className="font-bold">Review Upcoming Provider Modules</div>
                 <p className="text-xs text-[#52525B] mt-0.5">
-                  Review Phase 2–5 provider integrations required for live clicks, SERPs, and crawls.
+                  Inspect Phase 2B–6 integrations required for live clicks, SERPs, and site crawls.
                 </p>
               </div>
               <button
@@ -346,7 +300,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <div>
                 <div className="font-bold">Invite Agency Team Members</div>
                 <p className="text-xs text-[#52525B] mt-0.5">
-                  Add analysts or clients with organization-scoped roles and audit tracking.
+                  Add analysts or viewers with RLS-enforced roles and single-use invitation links.
                 </p>
               </div>
               <button
@@ -358,27 +312,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </button>
             </div>
           </div>
-
-          {demoMode && (
-            <div className="pt-4 border-t border-[#111111]/10 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#F42902]">
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>Sample Organic Visibility Trajectory (Demo)</span>
-              </div>
-              <div className="grid grid-cols-5 gap-2 items-end h-24 pt-2">
-                {DEMO_DATASET.visibilitySeries.map((pt) => (
-                  <div key={pt.week} className="flex flex-col items-center gap-1 h-full justify-end">
-                    <div
-                      className="w-full bg-[#F42902] rounded-t"
-                      style={{ height: `${Math.min(100, pt.googleEg * 2.2)}%` }}
-                      title={`Sample EG: ${pt.googleEg}%`}
-                    />
-                    <span className="text-[11px] font-mono text-[#52525B]">{pt.week}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

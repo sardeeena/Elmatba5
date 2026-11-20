@@ -1,3 +1,4 @@
+import { getAccessToken } from './supabase';
 import type {
   AuditLogItem,
   BusinessType,
@@ -15,14 +16,27 @@ import type {
   User,
 } from './types';
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  requiresAuth = false
+): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options.headers as Record<string, string>) ?? {}),
+  };
+
+  if (requiresAuth) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(path, {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
     ...options,
+    headers,
   });
 
   const data = await res.json().catch(() => ({}));
@@ -33,35 +47,26 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  me: () =>
-    request<{ authenticated: boolean; user: User | null; organizations: OrganizationSummary[] }>(
-      '/api/auth/session'
-    ),
+  getHealth: () =>
+    request<{
+      status: string;
+      database: string;
+      schemaReady: boolean;
+      timestamp: string;
+    }>('/api/health'),
 
-  register: (body: {
-    email: string;
-    password: string;
-    fullName: string;
-    preferredLocale: Locale;
-  }) =>
-    request<{ user: User; organizations: OrganizationSummary[] }>('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  login: (body: { email: string; password: string }) =>
-    request<{ user: User; organizations: OrganizationSummary[] }>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  getProfile: () =>
+    request<{ user: User; organizations: OrganizationSummary[] }>('/api/profile', {}, true),
 
   setLocale: (locale: Locale) =>
-    request<{ preferredLocale: Locale }>('/api/auth/locale', {
-      method: 'PATCH',
-      body: JSON.stringify({ locale }),
-    }),
+    request<{ preferredLocale: Locale }>(
+      '/api/profile/locale',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ locale }),
+      },
+      true
+    ),
 
   getMarketRegistry: () =>
     request<{
@@ -100,20 +105,28 @@ export const api = {
       competitors: Array<{ domain: string; label?: string }>;
     };
   }) =>
-    request<{ organization: OrganizationSummary; project: Project }>('/api/onboarding', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    request<{ organization: OrganizationSummary; project: Project }>(
+      '/api/onboarding',
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      true
+    ),
 
   createOrganization: (body: {
     name: string;
     businessType: BusinessType;
     billingCountryCode: string;
   }) =>
-    request<{ organization: OrganizationSummary }>('/api/organizations', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    request<{ organization: OrganizationSummary }>(
+      '/api/organizations',
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      true
+    ),
 
   getOrgOverview: (orgId: string) =>
     request<{
@@ -124,7 +137,7 @@ export const api = {
       members: OrganizationMemberItem[];
       invitations: OrganizationInvitationItem[];
       auditLogs: AuditLogItem[];
-    }>(`/api/organizations/${orgId}/overview`),
+    }>(`/api/organizations/${orgId}/overview`, {}, true),
 
   createProject: (
     orgId: string,
@@ -145,10 +158,14 @@ export const api = {
       competitors: Array<{ domain: string; label?: string }>;
     }
   ) =>
-    request<{ project: Project }>(`/api/organizations/${orgId}/projects`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    request<{ project: Project }>(
+      `/api/organizations/${orgId}/projects`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      true
+    ),
 
   addProjectMarket: (
     orgId: string,
@@ -160,10 +177,14 @@ export const api = {
       device: 'desktop' | 'mobile' | 'both';
     }
   ) =>
-    request<{ project: Project }>(`/api/organizations/${orgId}/projects/${projectId}/markets`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    request<{ project: Project }>(
+      `/api/organizations/${orgId}/projects/${projectId}/markets`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      true
+    ),
 
   addProjectCompetitor: (
     orgId: string,
@@ -175,25 +196,66 @@ export const api = {
       {
         method: 'POST',
         body: JSON.stringify(body),
-      }
+      },
+      true
     ),
 
   deleteProject: (orgId: string, projectId: string) =>
-    request<{ deleted: boolean }>(`/api/organizations/${orgId}/projects/${projectId}`, {
-      method: 'DELETE',
-    }),
+    request<{ deleted: boolean }>(
+      `/api/organizations/${orgId}/projects/${projectId}`,
+      {
+        method: 'DELETE',
+      },
+      true
+    ),
 
   inviteMember: (
     orgId: string,
     body: { email: string; role: 'admin' | 'analyst' | 'viewer' }
   ) =>
-    request<{ invitation: OrganizationInvitationItem }>(
+    request<{ invitation: OrganizationInvitationItem; inviteToken: string }>(
       `/api/organizations/${orgId}/invitations`,
       {
         method: 'POST',
         body: JSON.stringify(body),
-      }
+      },
+      true
     ),
+
+  acceptInvitation: (token: string) =>
+    request<{ organization: OrganizationSummary }>(
+      '/api/invitations/accept',
+      {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      },
+      true
+    ),
+
+  downloadGdprExport: async (orgId: string): Promise<void> => {
+    const token = await getAccessToken();
+    if (!token) throw new Error('Authentication required');
+
+    const res = await fetch(`/api/organizations/${orgId}/gdpr-export`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as { error?: string }).error || 'Unable to download GDPR export');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `elmatba5-gdpr-export-${orgId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 
   submitContactLead: (body: {
     fullName: string;

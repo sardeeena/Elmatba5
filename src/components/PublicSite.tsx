@@ -169,7 +169,21 @@ export const PublicSite: React.FC<PublicSiteProps> = ({
         </section>
 
         <section className="max-w-[1320px] mx-auto px-6 py-16">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {plans.length === 0 ? (
+            <div className="border-2 border-[#111111] rounded-xl p-8 bg-[#FDFDFF] text-sm space-y-2">
+              <div className="font-display text-lg font-extrabold text-[#F42902]">
+                {locale === 'ar'
+                  ? 'جداول الباقات بانتظار تهيئة قاعدة البيانات'
+                  : 'Plans unavailable until database migration is applied'}
+              </div>
+              <p className="text-[#52525B]">
+                {locale === 'ar'
+                  ? 'يتم تحميل الباقات مباشرة من قاعدة بيانات PostgreSQL في Supabase.'
+                  : 'Pricing tiers are loaded directly from Supabase PostgreSQL (plans table). Apply supabase/migrations/0001_initial_schema.sql to load active plans.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {plans.map((plan, idx) => {
               const highlighted = idx === 1;
               return (
@@ -244,7 +258,8 @@ export const PublicSite: React.FC<PublicSiteProps> = ({
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
           <p className="mt-8 text-xs text-[#52525B]">
             Note: Plans reflect initial commercial structure. Paymob Egypt checkout and automated
             server-side webhook billing activate in Phase 6; Phase 1 accounts start with full
@@ -407,9 +422,10 @@ export const PublicSite: React.FC<PublicSiteProps> = ({
                   logs directly from Settings.
                 </p>
                 <p>
-                  <strong>3. Credential & Secret Security:</strong> Passwords are hashed using
-                  per-user salted <code>scrypt</code>; third-party OAuth tokens and API keys remain
-                  strictly server-side.
+                  <strong>3. Credential & Secret Security:</strong> Authentication is handled by
+                  Supabase Auth with PKCE flow and verified JWT sessions enforced via PostgreSQL Row
+                  Level Security (RLS); third-party OAuth tokens and API keys remain strictly
+                  server-side.
                 </p>
               </>
             ) : (

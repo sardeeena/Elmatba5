@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from './components/AppShell';
 import { AuthViews } from './components/AuthViews';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -6,6 +6,12 @@ import { PublicFooter } from './components/PublicFooter';
 import { PublicHeader, type PublicRoute } from './components/PublicHeader';
 import { PublicSite } from './components/PublicSite';
 import { api } from './lib/api';
+import {
+  fetchPublicConfig,
+  getSupabaseClient,
+  signOutSupabase,
+  subscribeAuthChanges,
+} from './lib/supabase';
 import type {
   CountryOption,
   LanguageOption,
@@ -17,15 +23,23 @@ import type {
   User,
 } from './lib/types';
 
+const PENDING_INVITE_STORAGE_KEY = 'elmatba5_pending_invite';
+
 export default function App() {
   const [locale, setLocale] = useState<Locale>('en');
   const [publicRoute, setPublicRoute] = useState<PublicRoute>('home');
+  const [authFormMode, setAuthFormMode] = useState<'login' | 'signup' | 'forgot' | 'recovery'>(
+    'login'
+  );
   const [viewMode, setViewMode] = useState<'public' | 'onboarding' | 'app'>('public');
 
   const [booting, setBooting] = useState(true);
+  const [supabaseConfigured, setSupabaseConfigured] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(null);
+  const [inviteBannerMsg, setInviteBannerMsg] = useState<string | null>(null);
 
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [languages, setLanguages] = useState<LanguageOption[]>([]);
@@ -39,47 +53,136 @@ export default function App() {
     document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
   }, [locale]);
 
-  useEffect(() => {
-    let active = true;
-    async function init() {
-      try {
-        const [registry, billing] = await Promise.all([
-          api.getMarketRegistry(),
-          api.getPlans(),
-        ]);
-        if (!active) return;
-        setCountries(registry.countries);
-        setLanguages(registry.languages);
-        setSearchEngines(registry.searchEngines);
-        setCoverage(registry.coverage);
-        setPlans(billing.plans);
-      } catch {
-        // Registry fetch errors handled gracefully
-      }
+  const syncAuthenticatedWorkspace = useCallback(async () => {
+    const profile = await api.getProfile();
+    setUser(profile.user);
+    setLocale(profile.user.preferredLocale);
 
+    let orgs = profile.organizations;
+    const storedInvite = sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY);
+    if (storedInvite) {
       try {
-        const session = await api.me();
-        if (!active || !session.user) return;
-        setUser(session.user);
-        setLocale(session.user.preferredLocale);
-        setOrganizations(session.organizations);
-        if (session.organizations.length > 0) {
-          setActiveOrgId(session.organizations[0].id);
-          setViewMode('app');
-        } else {
-          setViewMode('onboarding');
-        }
-      } catch {
-        // Not signed in — stay on public site
-      } finally {
-        if (active) setBooting(false);
+        const accepted = await api.acceptInvitation(storedInvite);
+        sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
+        setPendingInviteToken(null);
+        setInviteBannerMsg(`Joined ${accepted.organization.name} as ${accepted.organization.role}.`);
+        const refreshed = await api.getProfile();
+        orgs = refreshed.organizations;
+      } catch (err) {
+        sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
+        setPendingInviteToken(null);
+        setInviteBannerMsg((err as Error).message);
       }
     }
+
+    setOrganizations(orgs);
+    if (orgs.length > 0) {
+      setActiveOrgId((prev) => (prev && orgs.some((o) => o.id === prev) ? prev : orgs[0].id));
+      setViewMode('app');
+    } else {
+      setViewMode('onboarding');
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe = () => {};
+
+    async function init() {
+      // Capture ?invite=<token> or ?mode=recovery from URL
+      const params = new URLSearchParams(window.location.search);
+      const inviteParam = params.get('invite');
+      const modeParam = params.get('mode');
+      if (inviteParam) {
+        sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, inviteParam);
+        setPendingInviteToken(inviteParam);
+      } else {
+        const stored = sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY);
+        if (stored) setPendingInviteToken(stored);
+      }
+
+      if (modeParam === 'recovery') {
+        setAuthFormMode('recovery');
+        setPublicRoute('login');
+      }
+
+      const [cfg, health] = await Promise.all([
+        fetchPublicConfig(),
+        api.getHealth().catch(() => ({
+          status: 'degraded',
+          database: 'unconfigured',
+          schemaReady: false,
+          timestamp: '',
+        })),
+      ]);
+      if (!active) return;
+      setSupabaseConfigured(cfg.configured);
+
+      if (cfg.configured && health.schemaReady) {
+        try {
+          const [registry, billing] = await Promise.all([
+            api.getMarketRegistry(),
+            api.getPlans(),
+          ]);
+          if (!active) return;
+          setCountries(registry.countries);
+          setLanguages(registry.languages);
+          setSearchEngines(registry.searchEngines);
+          setCoverage(registry.coverage);
+          setPlans(billing.plans);
+        } catch {
+          // Public site degrades gracefully when database schema isn't applied yet
+        }
+      }
+
+      if (cfg.configured) {
+        const client = await getSupabaseClient();
+        if (client && active) {
+          unsubscribe = await subscribeAuthChanges((event, session) => {
+            if (!active) return;
+            if (event === 'PASSWORD_RECOVERY') {
+              setAuthFormMode('recovery');
+              setPublicRoute('login');
+              setViewMode('public');
+              return;
+            }
+            if (event === 'SIGNED_OUT') {
+              setUser(null);
+              setOrganizations([]);
+              setActiveOrgId(null);
+              setViewMode('public');
+              return;
+            }
+            if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+              void syncAuthenticatedWorkspace().catch(() => {
+                // Handled by UI state
+              });
+            }
+          });
+
+          const { data } = await client.auth.getSession();
+          if (data.session && active && modeParam !== 'recovery') {
+            try {
+              await syncAuthenticatedWorkspace();
+            } catch {
+              // Stay on public site if token invalid or profile unreachable
+            }
+          } else if (inviteParam && !data.session) {
+            setAuthFormMode('login');
+            setPublicRoute('login');
+          }
+        }
+      }
+
+      if (active) setBooting(false);
+    }
+
     void init();
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, []);
+  }, [syncAuthenticatedWorkspace]);
 
   const handleToggleLocale = async (next: Locale) => {
     setLocale(next);
@@ -92,20 +195,8 @@ export default function App() {
     }
   };
 
-  const handleAuthSuccess = (authedUser: User, orgs: OrganizationSummary[]) => {
-    setUser(authedUser);
-    setLocale(authedUser.preferredLocale);
-    setOrganizations(orgs);
-    if (orgs.length > 0) {
-      setActiveOrgId(orgs[0].id);
-      setViewMode('app');
-    } else {
-      setViewMode('onboarding');
-    }
-  };
-
   const handleLogout = async () => {
-    await api.logout();
+    await signOutSupabase();
     setUser(null);
     setOrganizations([]);
     setActiveOrgId(null);
@@ -140,30 +231,56 @@ export default function App() {
 
   if (viewMode === 'app' && user && activeOrgId) {
     return (
-      <AppShell
-        user={user}
-        organizations={organizations}
-        activeOrgId={activeOrgId}
-        locale={locale}
-        countries={countries}
-        languages={languages}
-        searchEngines={searchEngines}
-        coverage={coverage}
-        plans={plans}
-        onSwitchOrg={(orgId) => setActiveOrgId(orgId)}
-        onOrgCreated={(newOrg) => {
-          setOrganizations([...organizations, newOrg]);
-          setActiveOrgId(newOrg.id);
-        }}
-        onToggleLocale={handleToggleLocale}
-        onLogout={handleLogout}
-        onBackToSite={() => {
-          setViewMode('public');
-          setPublicRoute('home');
-        }}
-      />
+      <>
+        {inviteBannerMsg && (
+          <div
+            role="status"
+            className="bg-[#83FD80] text-[#111111] border-b-2 border-[#111111] px-6 py-2.5 text-xs font-bold flex items-center justify-between"
+          >
+            <span>{inviteBannerMsg}</span>
+            <button
+              type="button"
+              onClick={() => setInviteBannerMsg(null)}
+              className="underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <AppShell
+          user={user}
+          organizations={organizations}
+          activeOrgId={activeOrgId}
+          locale={locale}
+          countries={countries}
+          languages={languages}
+          searchEngines={searchEngines}
+          coverage={coverage}
+          plans={plans}
+          onSwitchOrg={(orgId) => setActiveOrgId(orgId)}
+          onOrgCreated={(newOrg) => {
+            setOrganizations((prev) =>
+              prev.some((o) => o.id === newOrg.id) ? prev : [...prev, newOrg]
+            );
+            setActiveOrgId(newOrg.id);
+          }}
+          onToggleLocale={handleToggleLocale}
+          onLogout={handleLogout}
+          onBackToSite={() => {
+            setViewMode('public');
+            setPublicRoute('home');
+          }}
+        />
+      </>
     );
   }
+
+  const navigatePublic = (next: PublicRoute) => {
+    if (next === 'login') setAuthFormMode('login');
+    if (next === 'signup') setAuthFormMode('signup');
+    setPublicRoute(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FDFDFF] text-[#111111]">
@@ -171,10 +288,7 @@ export default function App() {
         route={publicRoute}
         locale={locale}
         isAuthenticated={Boolean(user)}
-        onNavigate={(next) => {
-          setPublicRoute(next);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        onNavigate={navigatePublic}
         onOpenApp={() => {
           if (organizations.length > 0) setViewMode('app');
           else setViewMode('onboarding');
@@ -184,10 +298,13 @@ export default function App() {
       <div className="flex-1">
         {publicRoute === 'login' || publicRoute === 'signup' ? (
           <AuthViews
-            mode={publicRoute}
+            mode={authFormMode}
             locale={locale}
-            onSuccess={handleAuthSuccess}
-            onNavigate={(next) => setPublicRoute(next)}
+            supabaseConfigured={supabaseConfigured}
+            hasPendingInvite={Boolean(pendingInviteToken)}
+            onModeChange={(nextMode) => setAuthFormMode(nextMode)}
+            onSessionReady={syncAuthenticatedWorkspace}
+            onNavigate={navigatePublic}
           />
         ) : (
           <PublicSite
@@ -195,10 +312,7 @@ export default function App() {
             locale={locale}
             plans={plans}
             onToggleLocale={handleToggleLocale}
-            onNavigate={(next) => {
-              setPublicRoute(next);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onNavigate={navigatePublic}
           />
         )}
       </div>
@@ -206,10 +320,7 @@ export default function App() {
       <PublicFooter
         locale={locale}
         onToggleLocale={handleToggleLocale}
-        onNavigate={(next) => {
-          setPublicRoute(next);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        onNavigate={navigatePublic}
       />
     </div>
   );

@@ -1,34 +1,34 @@
+import 'dotenv/config';
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDb } from './src/server/db.ts';
+import { loadAndValidateEnv } from './src/server/config/env.ts';
+import { createCorsMiddleware, securityHeadersMiddleware } from './src/server/middleware/security.ts';
 import { createApiRouter } from './src/server/routes.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT ?? 3000);
-const isProduction = process.env.NODE_ENV === 'production';
 
 async function startServer() {
-  // Initialize local relational database schema & reference registries
-  getDb();
+  const env = loadAndValidateEnv();
+
+  if (!env.supabaseConfigured) {
+    console.warn(
+      '[EL MATBA5] SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY is missing. API data routes will return 503 without falling back to SQLite.'
+    );
+  }
 
   const app = express();
   app.set('trust proxy', 1);
 
-  // Basic security headers
-  app.use((_req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    next();
-  });
-
+  app.use(securityHeadersMiddleware);
+  app.use(createCorsMiddleware(env));
   app.use(express.json({ limit: '1mb' }));
 
   // Mount server-side API routes
-  app.use('/api', createApiRouter());
+  app.use('/api', createApiRouter(env));
 
-  if (!isProduction) {
+  if (!env.isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -48,8 +48,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`EL MATBA5 server listening on http://localhost:${PORT}`);
+  app.listen(env.port, '0.0.0.0', () => {
+    console.log(`EL MATBA5 server listening on http://localhost:${env.port}`);
   });
 }
 

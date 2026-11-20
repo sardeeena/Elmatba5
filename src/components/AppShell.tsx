@@ -79,7 +79,6 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [section, setSection] = useState<string>('overview');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [forceCreateProject, setForceCreateProject] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -340,8 +339,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                   plan={orgData.plan}
                   usage={orgData.usage}
                   projects={orgData.projects}
-                  demoMode={demoMode}
-                  onToggleDemoMode={setDemoMode}
                   onCreateProject={() => {
                     setSection('projects');
                     setForceCreateProject(true);
@@ -400,8 +397,6 @@ export const AppShell: React.FC<AppShellProps> = ({
                 <ModulePreviews
                   section={section}
                   projects={orgData.projects}
-                  demoMode={demoMode}
-                  onToggleDemoMode={setDemoMode}
                 />
               )}
             </>

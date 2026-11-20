@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Plus, Shield } from 'lucide-react';
+import { Check, Copy, Download, Plus, Shield } from 'lucide-react';
 import { api } from '../lib/api';
 import type {
   AuditLogItem,
@@ -41,12 +41,18 @@ export const OrgAndBillingViews: React.FC<OrgAndBillingProps> = ({
 }) => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'analyst' | 'viewer'>('analyst');
+  const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [acceptToken, setAcceptToken] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Create new org state
   const [newOrgName, setNewOrgName] = useState('');
   const [newOrgType, setNewOrgType] = useState<BusinessType>('agency');
+
+  const canManageAdmin = organization.role === 'owner' || organization.role === 'admin';
 
   if (section === 'markets') {
     return (
@@ -98,11 +104,36 @@ export const OrgAndBillingViews: React.FC<OrgAndBillingProps> = ({
       e.preventDefault();
       setErr(null);
       setMsg(null);
+      setCreatedInviteLink(null);
       try {
-        await api.inviteMember(organization.id, { email: inviteEmail, role: inviteRole });
+        const res = await api.inviteMember(organization.id, {
+          email: inviteEmail,
+          role: inviteRole,
+        });
         setInviteEmail('');
-        setMsg('Invitation recorded and logged in audit trail.');
+        const link = `${window.location.origin}/?invite=${encodeURIComponent(res.inviteToken)}`;
+        setCreatedInviteLink(link);
+        setMsg(
+          'Invitation created with single-use hashed token. Share the secure link below with your teammate.'
+        );
         await onRefresh();
+      } catch (error) {
+        setErr((error as Error).message);
+      }
+    };
+
+    const handleAcceptToken = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setErr(null);
+      setMsg(null);
+      try {
+        const cleaned = acceptToken.includes('invite=')
+          ? new URL(acceptToken).searchParams.get('invite') ?? acceptToken
+          : acceptToken;
+        const res = await api.acceptInvitation(cleaned.trim());
+        setAcceptToken('');
+        onCreatedOrg(res.organization);
+        setMsg(`Joined ${res.organization.name} as ${res.organization.role}.`);
       } catch (error) {
         setErr((error as Error).message);
       }
@@ -113,7 +144,7 @@ export const OrgAndBillingViews: React.FC<OrgAndBillingProps> = ({
         <div>
           <h2 className="font-display text-2xl font-extrabold">Team & Access Control</h2>
           <p className="text-sm text-[#52525B]">
-            Manage members and role-based permissions inside {organization.name}.
+            Manage members and RLS-enforced permissions inside {organization.name}.
           </p>
         </div>
 
@@ -136,7 +167,7 @@ export const OrgAndBillingViews: React.FC<OrgAndBillingProps> = ({
 
             {invitations.length > 0 && (
               <div className="pt-4 border-t border-[#111111]/10 space-y-2">
-                <h4 className="text-xs font-bold uppercase text-[#52525B]">Pending Invitations</h4>
+                <h4 className="text-xs font-bold uppercase text-[#52525B]">Invitations</h4>
                 {invitations.map((inv) => (
                   <div key={inv.id} className="text-xs flex justify-between py-1">
                     <span className="font-mono">{inv.email}</span>
@@ -149,47 +180,101 @@ export const OrgAndBillingViews: React.FC<OrgAndBillingProps> = ({
             )}
           </div>
 
-          <div className="lg:col-span-5 bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-6 space-y-4">
-            <h3 className="font-display text-lg font-extrabold">Invite Teammate</h3>
-            <form onSubmit={handleInvite} className="space-y-3">
-              <div>
-                <label htmlFor="inv-email" className="block text-xs font-semibold mb-1">
-                  Teammate Email
-                </label>
+          <div className="lg:col-span-5 space-y-5">
+            <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-6 space-y-4">
+              <h3 className="font-display text-lg font-extrabold">Invite Teammate</h3>
+              {!canManageAdmin ? (
+                <p className="text-xs text-[#52525B]">
+                  Only organization owners or admins can issue new team invitations.
+                </p>
+              ) : (
+                <form onSubmit={handleInvite} className="space-y-3">
+                  <div>
+                    <label htmlFor="inv-email" className="block text-xs font-semibold mb-1">
+                      Teammate Email
+                    </label>
+                    <input
+                      id="inv-email"
+                      type="email"
+                      required
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="seo@agency.eg"
+                      className="w-full px-3 py-2 rounded-lg border border-[#111111]/25 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="inv-role" className="block text-xs font-semibold mb-1">
+                      Role
+                    </label>
+                    <select
+                      id="inv-role"
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as 'admin' | 'analyst' | 'viewer')}
+                      className="w-full px-3 py-2 rounded-lg border border-[#111111]/25 text-sm bg-[#FDFDFF]"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="analyst">Analyst</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </div>
+                  {err && <div className="text-xs text-[#F42902] font-semibold">{err}</div>}
+                  {msg && (
+                    <div className="text-xs text-[#111111] font-semibold bg-[#83FD80]/40 p-2.5 rounded space-y-2">
+                      <div>{msg}</div>
+                      {createdInviteLink && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <input
+                            type="text"
+                            readOnly
+                            value={createdInviteLink}
+                            className="flex-1 px-2 py-1 rounded border border-[#111111]/25 bg-[#FDFDFF] font-mono text-[11px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(createdInviteLink);
+                              setCopiedInvite(true);
+                              setTimeout(() => setCopiedInvite(false), 2000);
+                            }}
+                            className="px-2.5 py-1 rounded bg-[#111111] text-[#FDFDFF] text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            {copiedInvite ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedInvite ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-lg bg-[#83FD80] text-[#111111] border border-[#111111] text-xs font-bold cursor-pointer"
+                  >
+                    Create Secure Invitation
+                  </button>
+                </form>
+              )}
+            </div>
+
+            <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-6 space-y-3">
+              <h3 className="font-display text-base font-extrabold">Accept Workspace Invitation</h3>
+              <form onSubmit={handleAcceptToken} className="space-y-2.5">
                 <input
-                  id="inv-email"
-                  type="email"
+                  type="text"
                   required
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="seo@agency.eg"
-                  className="w-full px-3 py-2 rounded-lg border border-[#111111]/25 text-sm"
+                  value={acceptToken}
+                  onChange={(e) => setAcceptToken(e.target.value)}
+                  placeholder="Paste invite link or token"
+                  className="w-full px-3 py-2 rounded-lg border border-[#111111]/25 text-xs font-mono"
                 />
-              </div>
-              <div>
-                <label htmlFor="inv-role" className="block text-xs font-semibold mb-1">
-                  Role
-                </label>
-                <select
-                  id="inv-role"
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as 'admin' | 'analyst' | 'viewer')}
-                  className="w-full px-3 py-2 rounded-lg border border-[#111111]/25 text-sm bg-[#FDFDFF]"
+                <button
+                  type="submit"
+                  className="w-full py-2 rounded-lg bg-[#111111] text-[#FDFDFF] text-xs font-bold hover:bg-[#F42902] cursor-pointer"
                 >
-                  <option value="admin">Admin</option>
-                  <option value="analyst">Analyst</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-              {err && <div className="text-xs text-[#F42902] font-semibold">{err}</div>}
-              {msg && <div className="text-xs text-[#111111] font-semibold bg-[#83FD80]/40 p-2 rounded">{msg}</div>}
-              <button
-                type="submit"
-                className="w-full py-2.5 rounded-lg bg-[#83FD80] text-[#111111] border border-[#111111] text-xs font-bold cursor-pointer"
-              >
-                Send Invitation
-              </button>
-            </form>
+                  Accept Invitation
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -268,15 +353,28 @@ export const OrgAndBillingViews: React.FC<OrgAndBillingProps> = ({
           </div>
           <p className="text-xs text-[#52525B]">
             Export a complete JSON archive of {organization.name}, including projects, market
-            targets, competitors, members, and audit logs.
+            targets, competitors, members, and audit logs (Owner/Admin only).
           </p>
-          <a
-            href={`/api/organizations/${organization.id}/gdpr-export`}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#111111] text-[#FDFDFF] text-xs font-bold hover:bg-[#F42902]"
+          {err && <div className="text-xs text-[#F42902] font-semibold">{err}</div>}
+          <button
+            type="button"
+            disabled={exporting || !canManageAdmin}
+            onClick={async () => {
+              setErr(null);
+              setExporting(true);
+              try {
+                await api.downloadGdprExport(organization.id);
+              } catch (error) {
+                setErr((error as Error).message);
+              } finally {
+                setExporting(false);
+              }
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#111111] text-[#FDFDFF] text-xs font-bold hover:bg-[#F42902] cursor-pointer disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            <span>Download Organization JSON Archive</span>
-          </a>
+            <span>{exporting ? 'Preparing Archive...' : 'Download Organization JSON Archive'}</span>
+          </button>
         </div>
 
         <div className="bg-[#FDFDFF] border border-[#111111]/20 rounded-xl p-6 space-y-4">
