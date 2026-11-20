@@ -38,7 +38,7 @@ Do **not** delete or squash `0001_initial_schema.sql`. Migrations are ordered an
 
 1. Ensure Supabase Email Auth and site/redirect URLs are configured.
 2. **Option A — Supabase Dashboard SQL Editor:**
-   - Run `0001_initial_schema.sql`, `0002_phase_2a1_security_hardening.sql`, `0003_strict_email_confirmation.sql`, `0004_function_permission_hardening.sql`, `, and `0006_phase_2a4_auth_profile_email_sync.sql` in exact numerical order.
+   - Run all six timestamped migration files in `supabase/migrations/` in ascending version order.
 3. **Option B — Supabase CLI:**
    ```bash
    supabase login
