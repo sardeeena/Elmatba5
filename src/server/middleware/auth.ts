@@ -7,6 +7,7 @@ import { ensureUserProfile, getOrgMembership } from '../repositories/supabaseRep
 
 export interface AuthenticatedRequest extends Request {
   authUser?: User;
+  authEmailConfirmed?: boolean;
   accessToken?: string;
   supabase?: SupabaseClient;
 }
@@ -60,6 +61,7 @@ export function createRequireAuth(env: ServerEnvConfig) {
       });
 
       req.authUser = profile;
+      req.authEmailConfirmed = Boolean(data.user.email_confirmed_at || data.user.confirmed_at);
       req.accessToken = token;
       req.supabase = userClient;
       next();

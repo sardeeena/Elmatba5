@@ -293,6 +293,56 @@ export async function createOrganizationAtomic(
   return data as OrganizationSummary;
 }
 
+export async function completeOnboardingAtomicRpc(
+  supabase: SupabaseClient,
+  input: {
+    organization: {
+      name: string;
+      slug: string;
+      businessType: BusinessType;
+      billingCountryCode: string;
+    };
+    project: {
+      name: string;
+      websiteUrl: string;
+      businessDescription: string;
+      industry: string;
+      targetAudience: string;
+      primaryCountryCode: string;
+      businessGoals: string;
+      marketTargets: Array<{
+        countryCode: string;
+        languageCode: string;
+        searchEngineCode: 'google' | 'yandex' | 'bing';
+        device: 'desktop' | 'mobile' | 'both';
+      }>;
+      competitors: Array<{ domain: string; label?: string }>;
+    };
+  }
+): Promise<{ organization: OrganizationSummary; project: Project }> {
+  const { data, error } = await supabase.rpc('complete_onboarding_atomic', {
+    p_org_name: input.organization.name,
+    p_org_slug: input.organization.slug,
+    p_business_type: input.organization.businessType,
+    p_billing_country_code: input.organization.billingCountryCode,
+    p_project_name: input.project.name,
+    p_website_url: input.project.websiteUrl,
+    p_business_description: input.project.businessDescription,
+    p_industry: input.project.industry,
+    p_target_audience: input.project.targetAudience,
+    p_primary_country_code: input.project.primaryCountryCode,
+    p_business_goals: input.project.businessGoals,
+    p_market_targets: input.project.marketTargets,
+    p_competitors: input.project.competitors,
+  });
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to complete onboarding');
+  }
+
+  return data as { organization: OrganizationSummary; project: Project };
+}
+
 export async function getOrgUsage(
   supabase: SupabaseClient,
   orgId: string

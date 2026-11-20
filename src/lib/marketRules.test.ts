@@ -70,8 +70,11 @@ test('Plan project and member entitlements enforce limits accurately', () => {
   assert.equal(checkProjectEntitlement(starterPlan, { ...usageAtLimit, projectsCount: 1 }).allowed, true);
 });
 
-test('URL and competitor domain normalization rejects invalid domains', () => {
+test('URL and competitor domain normalization rejects invalid schemes and domains', () => {
   assert.equal(normalizeWebsiteUrl('elmatba5.com/'), 'https://elmatba5.com');
+  assert.throws(() => normalizeWebsiteUrl('ftp://example.com'), /http or https/i);
+  assert.throws(() => normalizeWebsiteUrl('javascript:alert(1)'), /http or https/i);
+  assert.throws(() => normalizeWebsiteUrl('notadomain'), /valid domain/i);
   assert.equal(normalizeCompetitorDomain('https://www.Competitor.de/blog'), 'competitor.de');
   assert.throws(() => normalizeCompetitorDomain('notadomain'));
 });

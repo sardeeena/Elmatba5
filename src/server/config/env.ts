@@ -2,12 +2,34 @@ export interface ServerEnvConfig {
   nodeEnv: string;
   isProduction: boolean;
   port: number;
+  trustProxy: boolean | number | string;
   supabaseUrl: string;
   supabasePublishableKey: string;
   supabaseConfigured: boolean;
   sessionSecret: string;
   appUrl: string;
   allowedOrigins: string[];
+}
+
+export function parseTrustProxy(raw: string | undefined): boolean | number | string {
+  const val = (raw ?? '').trim().toLowerCase();
+  if (!val || val === 'false' || val === '0') {
+    return false;
+  }
+  if (val === 'true') {
+    return 1; // Trust first proxy hop safely rather than arbitrary proxy chains
+  }
+  if (/^\d+$/.test(val)) {
+    const hops = Number(val);
+    return hops > 0 ? hops : false;
+  }
+  // Allow named Express trust-proxy presets (e.g., loopback, linklocal, uniquelocal)
+  if (/^(loopback|linklocal|uniquelocal)(\s*,\s*(loopback|linklocal|uniquelocal))*$/.test(val)) {
+    return val;
+  }
+  throw new Error(
+    'Invalid TRUST_PROXY configuration: use false, a non-negative hop integer (e.g. 1), or loopback/linklocal/uniquelocal.'
+  );
 }
 
 export function parseAllowedOrigins(appUrl: string, corsOriginRaw: string | undefined, isProduction: boolean): string[] {
@@ -46,6 +68,7 @@ export function loadAndValidateEnv(envSource: NodeJS.ProcessEnv = process.env): 
   const nodeEnv = envSource.NODE_ENV ?? 'development';
   const isProduction = nodeEnv === 'production';
   const port = Number(envSource.PORT ?? 3000);
+  const trustProxy = parseTrustProxy(envSource.TRUST_PROXY);
 
   const supabaseUrl = (envSource.SUPABASE_URL ?? '').trim();
   const supabasePublishableKey = (envSource.SUPABASE_PUBLISHABLE_KEY ?? '').trim();
@@ -89,6 +112,7 @@ export function loadAndValidateEnv(envSource: NodeJS.ProcessEnv = process.env): 
     nodeEnv,
     isProduction,
     port,
+    trustProxy,
     supabaseUrl: validSupabaseUrl ? supabaseUrl : '',
     supabasePublishableKey,
     supabaseConfigured,

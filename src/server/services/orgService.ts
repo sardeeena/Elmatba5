@@ -4,6 +4,7 @@ import {
   checkProjectEntitlement,
   normalizeCompetitorDomain,
   normalizeWebsiteUrl,
+  resolveMarketProvider,
 } from '../../lib/marketRules.ts';
 import type {
   BusinessType,
@@ -15,6 +16,7 @@ import type {
 } from '../../lib/types.ts';
 import {
   acceptOrganizationInvitationRpc,
+  completeOnboardingAtomicRpc,
   createOrgInvitation,
   createOrganizationAtomic,
   createProject,
@@ -27,12 +29,51 @@ import {
 } from '../repositories/supabaseRepo.ts';
 import { generateInviteToken, hashInviteToken, slugifyOrgName } from '../security.ts';
 
+/**
+ * Deliberate transactional safety policy matching `public.max_owned_organizations_default()`
+ * in `0002_phase_2a1_security_hardening.sql`: current `plans` attach to `organizations` and
+ * do not define a per-user `max_organizations` entitlement yet.
+ */
+export const MAX_OWNED_ORGANIZATIONS_DEFAULT = 3;
+
 export class HttpError extends Error {
   status: number;
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
+}
+
+function mapDomainRpcError(err: unknown): HttpError | null {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (!message) return null;
+
+  if (message.includes('already been completed')) {
+    return new HttpError(409, message);
+  }
+  if (message.includes('limit reached') || message.includes('quota')) {
+    return new HttpError(402, message);
+  }
+  if (message.includes('must be confirmed') || message.includes('different email')) {
+    return new HttpError(403, message);
+  }
+  if (
+    message.includes('Invalid') ||
+    message.includes('must use') ||
+    message.includes('between 2') ||
+    message.includes('At least one') ||
+    message.includes('Too many') ||
+    message.includes('Maximum 20') ||
+    message.includes('not supported') ||
+    message.includes('not found') ||
+    message.includes('expired') ||
+    message.includes('already been accepted') ||
+    message.includes('no longer active') ||
+    message.includes('duplicate key')
+  ) {
+    return new HttpError(400, message);
+  }
+  return null;
 }
 
 export async function createOrgWithBootstrap(
@@ -43,12 +84,109 @@ export async function createOrgWithBootstrap(
     billingCountryCode: string;
   }
 ): Promise<OrganizationSummary> {
-  return createOrganizationAtomic(supabase, {
-    name: input.name,
-    slug: slugifyOrgName(input.name),
-    businessType: input.businessType,
-    billingCountryCode: input.billingCountryCode,
+  try {
+    return await createOrganizationAtomic(supabase, {
+      name: input.name,
+      slug: slugifyOrgName(input.name),
+      businessType: input.businessType,
+      billingCountryCode: input.billingCountryCode,
+    });
+  } catch (err) {
+    const mapped = mapDomainRpcError(err);
+    if (mapped) throw mapped;
+    throw err;
+  }
+}
+
+export async function completeOnboardingAtomic(
+  supabase: SupabaseClient,
+  input: {
+    organization: {
+      name: string;
+      businessType: BusinessType;
+      billingCountryCode: string;
+    };
+    project: {
+      name: string;
+      websiteUrl: string;
+      businessDescription: string;
+      industry: string;
+      targetAudience: string;
+      primaryCountryCode: string;
+      businessGoals: string;
+      marketTargets: Array<{
+        countryCode: string;
+        languageCode: string;
+        searchEngineCode: 'google' | 'yandex' | 'bing';
+        device: 'desktop' | 'mobile' | 'both';
+      }>;
+      competitors: Array<{ domain: string; label?: string }>;
+    };
+  }
+): Promise<{ organization: OrganizationSummary; project: Project }> {
+  let normalizedUrl: string;
+  const normalizedCompetitors: Array<{ domain: string; label?: string }> = [];
+
+  try {
+    normalizedUrl = normalizeWebsiteUrl(input.project.websiteUrl);
+    for (const comp of input.project.competitors) {
+      if (!comp.domain.trim()) continue;
+      normalizedCompetitors.push({
+        domain: normalizeCompetitorDomain(comp.domain),
+        label: comp.label,
+      });
+    }
+  } catch (err) {
+    throw new HttpError(400, (err as Error).message);
+  }
+
+  const seenTargets = new Set<string>();
+  const normalizedTargets = input.project.marketTargets.map((target) => {
+    const resolution = resolveMarketProvider(
+      target.countryCode,
+      target.languageCode,
+      target.searchEngineCode
+    );
+    if (resolution.coverageStatus === 'unsupported') {
+      throw new HttpError(400, resolution.explanationEn);
+    }
+    const tupleKey = `${resolution.countryCode}:${resolution.languageCode}:${resolution.searchEngineCode}`;
+    if (seenTargets.has(tupleKey)) {
+      throw new HttpError(
+        400,
+        `Duplicate target market configuration: ${resolution.countryCode} / ${resolution.languageCode} / ${resolution.searchEngineCode}`
+      );
+    }
+    seenTargets.add(tupleKey);
+    return {
+      countryCode: resolution.countryCode,
+      languageCode: resolution.languageCode,
+      searchEngineCode: resolution.searchEngineCode,
+      device: target.device,
+    };
   });
+
+  try {
+    return await completeOnboardingAtomicRpc(supabase, {
+      organization: {
+        name: input.organization.name,
+        slug: slugifyOrgName(input.organization.name),
+        businessType: input.organization.businessType,
+        billingCountryCode: input.organization.billingCountryCode,
+      },
+      project: {
+        ...input.project,
+        websiteUrl: normalizedUrl,
+        primaryCountryCode: input.project.primaryCountryCode.toUpperCase(),
+        marketTargets: normalizedTargets,
+        competitors: normalizedCompetitors,
+      },
+    });
+  } catch (err) {
+    const mapped = mapDomainRpcError(err);
+    if (mapped) throw mapped;
+    throw err;
+  }
 }
 
 export async function createTenantProject(
@@ -86,6 +224,17 @@ export async function createTenantProject(
     }
   } catch (err) {
     throw new HttpError(400, (err as Error).message);
+  }
+
+  for (const target of input.marketTargets) {
+    const resolution = resolveMarketProvider(
+      target.countryCode,
+      target.languageCode,
+      target.searchEngineCode
+    );
+    if (resolution.coverageStatus === 'unsupported') {
+      throw new HttpError(400, resolution.explanationEn);
+    }
   }
 
   const orgs = await listOrganizationsForUser(supabase, input.actorUserId);
@@ -166,22 +315,18 @@ export async function createTeamInvitation(
 
 export async function acceptTeamInvitation(
   supabase: SupabaseClient,
-  rawToken: string
+  rawToken: string,
+  options: { emailConfirmed?: boolean } = {}
 ): Promise<OrganizationSummary> {
+  if (options.emailConfirmed === false) {
+    throw new HttpError(403, 'Email address must be confirmed before accepting an invitation');
+  }
+
   try {
     return await acceptOrganizationInvitationRpc(supabase, rawToken);
   } catch (err) {
-    const message = (err as Error).message || 'Unable to accept invitation';
-    if (
-      message.includes('not found') ||
-      message.includes('expired') ||
-      message.includes('already been accepted') ||
-      message.includes('different email') ||
-      message.includes('quota') ||
-      message.includes('Invalid invitation')
-    ) {
-      throw new HttpError(400, message);
-    }
+    const mapped = mapDomainRpcError(err);
+    if (mapped) throw mapped;
     throw err;
   }
 }

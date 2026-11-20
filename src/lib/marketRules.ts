@@ -170,10 +170,14 @@ export function checkMemberEntitlement(
 export function normalizeWebsiteUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
   if (!trimmed) return '';
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  const parsed = new URL(withProtocol);
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+  const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+  const parsed = new URL(candidate);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error('Website URL must use http or https protocol.');
+  }
+  if (!parsed.hostname || !parsed.hostname.includes('.')) {
+    throw new Error('Website URL must include a valid domain name.');
   }
   return parsed.origin + (parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, ''));
 }

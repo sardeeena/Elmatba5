@@ -25,6 +25,7 @@ import {
   acceptTeamInvitation,
   assembleGdprExport,
   assembleOrgOverview,
+  completeOnboardingAtomic,
   createOrgWithBootstrap,
   createTeamInvitation,
   createTenantProject,
@@ -136,7 +137,7 @@ export function createApiRouter(env: ServerEnvConfig) {
       } catch {
         res.status(503).json({
           error:
-            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql in Supabase.',
+            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql and 0002_phase_2a1_security_hardening.sql in Supabase.',
         });
       }
     })
@@ -181,16 +182,17 @@ export function createApiRouter(env: ServerEnvConfig) {
       } catch {
         res.status(503).json({
           error:
-            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql in Supabase.',
+            'Database schema is not initialized yet. Apply supabase/migrations/0001_initial_schema.sql and 0002_phase_2a1_security_hardening.sql in Supabase.',
         });
       }
     })
   );
 
-  // --- GUIDED ONBOARDING ---
+  // --- GUIDED ONBOARDING (Single Atomic DB Transaction) ---
   router.post(
     '/onboarding',
     requireAuth,
+    rateLimit(10, 60_000),
     asyncHandler(async (req, res) => {
       const parsed = onboardingSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -199,14 +201,12 @@ export function createApiRouter(env: ServerEnvConfig) {
           .json({ error: parsed.error.issues[0]?.message ?? 'Invalid onboarding input' });
       }
 
-      const org = await createOrgWithBootstrap(req.supabase!, parsed.data.organization);
-      const project = await createTenantProject(req.supabase!, {
-        organizationId: org.id,
-        actorUserId: req.authUser!.id,
-        ...parsed.data.project,
+      const result = await completeOnboardingAtomic(req.supabase!, {
+        organization: parsed.data.organization,
+        project: parsed.data.project,
       });
 
-      res.status(201).json({ organization: org, project });
+      res.status(201).json(result);
     })
   );
 
@@ -223,6 +223,7 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.post(
     '/organizations',
     requireAuth,
+    rateLimit(10, 60_000),
     asyncHandler(async (req, res) => {
       const parsed = createOrgSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -255,6 +256,7 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.post(
     '/organizations/:orgId/invitations',
     requireAuth,
+    rateLimit(20, 60_000),
     asyncHandler(async (req, res) => {
       const access = await getValidatedOrgAccess(req, res, String(req.params.orgId), 'admin');
       if (!access) return;
@@ -278,7 +280,7 @@ export function createApiRouter(env: ServerEnvConfig) {
   router.post(
     '/invitations/accept',
     requireAuth,
-    rateLimit(15, 60_000),
+    rateLimit(10, 60_000),
     asyncHandler(async (req, res) => {
       const parsed = acceptInvitationSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -287,7 +289,9 @@ export function createApiRouter(env: ServerEnvConfig) {
           .json({ error: parsed.error.issues[0]?.message ?? 'Invalid invitation token' });
       }
 
-      const organization = await acceptTeamInvitation(req.supabase!, parsed.data.token);
+      const organization = await acceptTeamInvitation(req.supabase!, parsed.data.token, {
+        emailConfirmed: Boolean(req.authEmailConfirmed),
+      });
       res.json({ organization });
     })
   );
