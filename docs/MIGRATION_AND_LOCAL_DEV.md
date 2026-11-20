@@ -43,15 +43,18 @@ Do **not** delete or squash `0001_initial_schema.sql`. Migrations are ordered an
    ```bash
    supabase login
    supabase link --project-ref <your-project-ref>
-   supabase db push
+   supabase db push --remote --dry-run
+   # Review the planned migrations. Only after explicit production approval:
+   supabase db push --remote --yes
    ```
+   Supabase CLI v3 targets the local stack by default; `--remote` is required for hosted databases. Never run the final command until the migration plan, backup, and rollback procedure have been reviewed.
 4. Verify `Authentication -> URL Configuration`:
    - Set **Site URL** to your `APP_URL` (e.g. `http://localhost:3000` in dev or your Cloud Run service URL).
    - Add `<APP_URL>/**` to **Redirect URLs** for PKCE sign-up confirmation and password recovery.
 
 ### Upgrading an Existing Database (Where `0001`–`0004` Already Ran)
 
-- **Prerequisites & Backup:** Take a logical or physical backup before upgrading (`supabase db dump` or Supabase Dashboard backup).
+- **Prerequisites & Backup:** Take a logical or physical backup before upgrading (`supabase db dump --remote -f pre-phase-2a-backup.sql` or Supabase Dashboard backup).
 - **Apply candidates only after validation and explicit approval:** Apply `20261120202600_0005_phase_2a3_security_and_performance.sql` and then `20261120203100_0006_phase_2a4_auth_profile_email_sync.sql` in order. They are not yet applied to production. Do not apply either until the isolated local PostgreSQL/RLS suite passes and a production backup/rollback plan is ready.
 - **Rollback Considerations:**
   - If existing customer accounts already own more than 3 organizations before applying `0002`, existing ownership rows remain intact (only *new* creations check the limit), or `public.max_owned_organizations_default()` can be adjusted in a follow-up migration.
