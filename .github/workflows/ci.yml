@@ -45,6 +45,7 @@ jobs:
           version: latest
 
       - name: Start isolated local Supabase
+        id: supabase-start
         run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector
 
       - name: Apply all ordered migrations to local PostgreSQL
@@ -71,5 +72,5 @@ jobs:
         run: npm run build
 
       - name: Stop local Supabase
-        if: always() && steps.supabase-cli.outcome == 'success'
+        if: always() && steps.supabase-start.outcome == 'success'
         run: supabase stop --no-backup
