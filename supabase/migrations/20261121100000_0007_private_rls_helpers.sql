@@ -64,9 +64,9 @@ BEGIN
     FROM pg_policy p
     JOIN pg_class c ON c.oid = p.polrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE (COALESCE(pg_get_expr(p.polqual, p.polrelid), '') ||
-           COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), ''))
-          ~ 'public\\.(is_org_member|has_org_role|can_view_profile)'
+    WHERE (position('public.is_org_member' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
+        OR position('public.has_org_role' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
+        OR position('public.can_view_profile' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0)
   LOOP
     v_using := v_policy.using_expression;
     v_check := v_policy.check_expression;
@@ -105,9 +105,9 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_policy p
-    WHERE (COALESCE(pg_get_expr(p.polqual, p.polrelid), '') ||
-           COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), ''))
-          ~ 'public\\.(is_org_member|has_org_role|can_view_profile)'
+    WHERE (position('public.is_org_member' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
+        OR position('public.has_org_role' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
+        OR position('public.can_view_profile' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0)
   ) THEN
     RAISE EXCEPTION 'A public RLS policy still references a moved helper';
   END IF;
