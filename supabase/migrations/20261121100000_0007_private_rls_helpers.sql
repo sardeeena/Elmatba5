@@ -57,31 +57,57 @@ DECLARE
   v_check TEXT;
   v_statement TEXT;
 BEGIN
+  -- pg_get_expr deparses these calls without the public schema prefix, so
+  -- select policies through pg_depend rather than matching a qualified name.
   FOR v_policy IN
-    SELECT p.polname, c.relname AS table_name, n.nspname AS schema_name,
+    SELECT DISTINCT p.polname, c.relname AS table_name, n.nspname AS schema_name,
       pg_get_expr(p.polqual, p.polrelid) AS using_expression,
       pg_get_expr(p.polwithcheck, p.polrelid) AS check_expression
     FROM pg_policy p
     JOIN pg_class c ON c.oid = p.polrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE (position('public.is_org_member' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
-        OR position('public.has_org_role' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
-        OR position('public.can_view_profile' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0)
+    JOIN pg_depend d ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
+    JOIN pg_proc f ON d.refclassid = 'pg_proc'::regclass AND d.refobjid = f.oid
+    WHERE f.pronamespace = 'public'::regnamespace
+      AND f.proname IN ('is_org_member', 'has_org_role', 'can_view_profile')
   LOOP
     v_using := v_policy.using_expression;
     v_check := v_policy.check_expression;
 
     IF v_using IS NOT NULL THEN
-      v_using := replace(replace(replace(v_using,
-        'public.is_org_member', 'private.is_org_member'),
-        'public.has_org_role', 'private.has_org_role'),
-        'public.can_view_profile', 'private.can_view_profile');
+      IF position('public.is_org_member(' in v_using) > 0 THEN
+        v_using := replace(v_using, 'public.is_org_member(', 'private.is_org_member(');
+      ELSE
+        v_using := replace(v_using, 'is_org_member(', 'private.is_org_member(');
+      END IF;
+      IF position('public.has_org_role(' in v_using) > 0 THEN
+        v_using := replace(v_using, 'public.has_org_role(', 'private.has_org_role(');
+      ELSE
+        v_using := replace(v_using, 'has_org_role(', 'private.has_org_role(');
+      END IF;
+      IF position('public.can_view_profile(' in v_using) > 0 THEN
+        v_using := replace(v_using, 'public.can_view_profile(', 'private.can_view_profile(');
+      ELSE
+        v_using := replace(v_using, 'can_view_profile(', 'private.can_view_profile(');
+      END IF;
     END IF;
+
     IF v_check IS NOT NULL THEN
-      v_check := replace(replace(replace(v_check,
-        'public.is_org_member', 'private.is_org_member'),
-        'public.has_org_role', 'private.has_org_role'),
-        'public.can_view_profile', 'private.can_view_profile');
+      IF position('public.is_org_member(' in v_check) > 0 THEN
+        v_check := replace(v_check, 'public.is_org_member(', 'private.is_org_member(');
+      ELSE
+        v_check := replace(v_check, 'is_org_member(', 'private.is_org_member(');
+      END IF;
+      IF position('public.has_org_role(' in v_check) > 0 THEN
+        v_check := replace(v_check, 'public.has_org_role(', 'private.has_org_role(');
+      ELSE
+        v_check := replace(v_check, 'has_org_role(', 'private.has_org_role(');
+      END IF;
+      IF position('public.can_view_profile(' in v_check) > 0 THEN
+        v_check := replace(v_check, 'public.can_view_profile(', 'private.can_view_profile(');
+      ELSE
+        v_check := replace(v_check, 'can_view_profile(', 'private.can_view_profile(');
+      END IF;
     END IF;
 
     v_statement := format('ALTER POLICY %I ON %I.%I',
@@ -104,12 +130,14 @@ DROP FUNCTION public.can_view_profile(UUID);
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM pg_policy p
-    WHERE (position('public.is_org_member' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
-        OR position('public.has_org_role' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0
-        OR position('public.can_view_profile' in COALESCE(pg_get_expr(p.polqual, p.polrelid), '') || COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')) > 0)
+    SELECT 1
+    FROM pg_depend d
+    JOIN pg_proc f ON d.refclassid = 'pg_proc'::regclass AND d.refobjid = f.oid
+    WHERE d.classid = 'pg_policy'::regclass
+      AND f.pronamespace = 'public'::regnamespace
+      AND f.proname IN ('is_org_member', 'has_org_role', 'can_view_profile')
   ) THEN
-    RAISE EXCEPTION 'A public RLS policy still references a moved helper';
+    RAISE EXCEPTION 'A public RLS policy still depends on a moved helper';
   END IF;
 END;
 $$;
