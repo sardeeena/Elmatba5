@@ -127,7 +127,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.enforce_project_quota_on_insert()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, auth, pg_temp
-AS $
+AS $$
 DECLARE
   v_invoker_role TEXT := COALESCE(NULLIF(NULLIF(pg_catalog.current_setting('role', true), ''), 'none'), session_user);
   v_max_projects INTEGER;
@@ -147,7 +147,7 @@ BEGIN
   IF v_max_projects IS NOT NULL AND v_current_projects >= v_max_projects THEN RAISE EXCEPTION 'Project plan limit reached: maximum % active projects allowed on current plan', v_max_projects; END IF;
   RETURN NEW;
 END;
-$;
+$$;
 DROP FUNCTION public.is_org_member(UUID);
 DROP FUNCTION public.has_org_role(UUID, TEXT[]);
 DROP FUNCTION public.can_view_profile(UUID);
