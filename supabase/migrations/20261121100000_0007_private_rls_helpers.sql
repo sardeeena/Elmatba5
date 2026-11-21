@@ -123,6 +123,31 @@ BEGIN
 END;
 $$;
 
+-- Project quota trigger also used the public role helper; preserve its authorization.
+CREATE OR REPLACE FUNCTION public.enforce_project_quota_on_insert()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $
+DECLARE
+  v_invoker_role TEXT := COALESCE(NULLIF(NULLIF(pg_catalog.current_setting('role', true), ''), 'none'), session_user);
+  v_max_projects INTEGER;
+  v_current_projects INTEGER;
+BEGIN
+  IF TG_TABLE_SCHEMA <> 'public' OR TG_TABLE_NAME <> 'projects' THEN RAISE EXCEPTION 'Invalid trigger target for enforce_project_quota_on_insert'; END IF;
+  IF NEW.organization_id IS NULL THEN RAISE EXCEPTION 'Organization id is required for project creation'; END IF;
+  IF v_invoker_role IN ('anon', 'authenticated', 'authenticator') THEN
+    IF auth.uid() IS NULL OR NOT private.has_org_role(NEW.organization_id, ARRAY['owner', 'admin', 'analyst']) THEN
+      RAISE EXCEPTION 'Insufficient permissions to create project in this organization' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('proj_quota:' || NEW.organization_id::TEXT, 0));
+  SELECT p.max_projects INTO v_max_projects FROM public.organizations o JOIN public.plans p ON p.id = o.plan_id WHERE o.id = NEW.organization_id FOR SHARE OF o;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Organization not found'; END IF;
+  SELECT COUNT(*) INTO v_current_projects FROM public.projects pr WHERE pr.organization_id = NEW.organization_id;
+  IF v_max_projects IS NOT NULL AND v_current_projects >= v_max_projects THEN RAISE EXCEPTION 'Project plan limit reached: maximum % active projects allowed on current plan', v_max_projects; END IF;
+  RETURN NEW;
+END;
+$;
 DROP FUNCTION public.is_org_member(UUID);
 DROP FUNCTION public.has_org_role(UUID, TEXT[]);
 DROP FUNCTION public.can_view_profile(UUID);
@@ -140,4 +165,122 @@ BEGIN
     RAISE EXCEPTION 'A public RLS policy still depends on a moved helper';
   END IF;
 END;
+$$;
+
+-- Keep the historical Phase 2A.3 readiness RPC accurate after moving its helpers.
+CREATE OR REPLACE FUNCTION public.phase_2a3_security_perf_ready()
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SET search_path = public, pg_catalog, pg_temp
+AS $$
+  SELECT
+    -- 1. All 7 justified FK covering indexes exist in public schema
+    (
+      SELECT COUNT(*) = 7
+      FROM pg_catalog.pg_indexes i
+      WHERE i.schemaname = 'public'
+        AND i.indexname = ANY(ARRAY[
+          'idx_audit_logs_actor_user_id',
+          'idx_org_invitations_accepted_by',
+          'idx_org_invitations_invited_by',
+          'idx_organizations_created_by',
+          'idx_organizations_plan_id',
+          'idx_projects_created_by',
+          'idx_projects_primary_country'
+        ])
+    )
+    -- 2. Redundant index dropped and direct client usage_records write policies removed
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_indexes i
+      WHERE i.schemaname = 'public'
+        AND i.indexname = 'idx_org_members_org'
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_policies pol
+      WHERE pol.schemaname = 'public'
+        AND pol.tablename = 'usage_records'
+        AND pol.policyname = ANY(ARRAY['usage_records_insert_analyst', 'usage_records_update_analyst'])
+    )
+    -- 3. All 5 flagged RLS policies exist and wrap auth.uid() in a scalar subselect (InitPlan)
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_policies pol
+      WHERE pol.schemaname = 'public' AND pol.tablename = 'profiles'
+        AND pol.policyname = 'profiles_insert_self'
+        AND pol.with_check ~* '\(\s*SELECT\s+auth\.uid\(\)'
+    )
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_policies pol
+      WHERE pol.schemaname = 'public' AND pol.tablename = 'profiles'
+        AND pol.policyname = 'profiles_update_self'
+        AND pol.qual ~* '\(\s*SELECT\s+auth\.uid\(\)'
+        AND pol.with_check ~* '\(\s*SELECT\s+auth\.uid\(\)'
+    )
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_policies pol
+      WHERE pol.schemaname = 'public' AND pol.tablename = 'organization_invitations'
+        AND pol.policyname = 'org_invitations_insert_admin'
+        AND pol.with_check ~* '\(\s*SELECT\s+auth\.uid\(\)'
+    )
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_policies pol
+      WHERE pol.schemaname = 'public' AND pol.tablename = 'audit_logs'
+        AND pol.policyname = 'audit_logs_insert_member'
+        AND pol.with_check ~* '\(\s*SELECT\s+auth\.uid\(\)'
+    )
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_policies pol
+      WHERE pol.schemaname = 'public' AND pol.tablename = 'projects'
+        AND pol.policyname = 'projects_insert_analyst'
+        AND pol.with_check ~* '\(\s*SELECT\s+auth\.uid\(\)'
+    )
+    -- 4. Required security & quota triggers exist and are enabled on their exact public tables
+    AND (
+      SELECT COUNT(*) = 5
+      FROM pg_catalog.pg_trigger t
+      JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND NOT t.tgisinternal
+        AND t.tgenabled <> 'D'
+        AND (c.relname, t.tgname) IN (
+          ('organizations', 'trg_organizations_protect_billing'),
+          ('organization_invitations', 'trg_org_invitations_integrity'),
+          ('profiles', 'trg_profiles_protect_identity'),
+          ('projects', 'trg_projects_enforce_quota'),
+          ('projects', 'trg_projects_immutable_org')
+        )
+    )
+    -- 5. All 5 internal trigger functions deny EXECUTE to both anon and authenticated
+    AND (
+      SELECT COUNT(*) = 5
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public'
+        AND p.proname = ANY(ARRAY[
+          'protect_organization_immutable_fields',
+          'protect_organization_invitation_integrity',
+          'protect_profile_identity_fields',
+          'prevent_cross_org_reassignment',
+          'enforce_project_quota_on_insert'
+        ])
+        AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+        AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    )
+    -- 6. RLS helpers now live only in the non-exposed private schema.
+    AND (
+      SELECT COUNT(*) = 3
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'private'
+        AND p.proname = ANY(ARRAY['is_org_member', 'has_org_role', 'can_view_profile'])
+        AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+        AND pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = ANY(ARRAY['is_org_member', 'has_org_role', 'can_view_profile'])
+    );
 $$;
