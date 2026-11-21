@@ -1067,15 +1067,28 @@ test('PostgreSQL RLS, Security Hardening & Strict Email Confirmation Suite', asy
       assert.ok(anonStrictReady.error, 'anon must be denied phase_2a1_1_strict_email_confirmation_ready');
 
       // Authenticated role must NOT execute internal/trigger helpers
-      const [authMaxOrgs, authHandleUser, authCrossOrgTrigger] = await Promise.all([
+      const [
+        authMaxOrgs,
+        authHandleUser,
+        authCrossOrgTrigger,
+        authIsMember,
+        authHasRole,
+        authCanView,
+      ] = await Promise.all([
         clientA.rpc('max_owned_organizations_default'),
         clientA.rpc('handle_new_user'),
         clientA.rpc('prevent_cross_org_reassignment'),
+        clientA.rpc('is_org_member', { p_org_id: orgA.id }),
+        clientA.rpc('has_org_role', { p_org_id: orgA.id, p_roles: ['owner'] }),
+        clientA.rpc('can_view_profile', { p_profile_id: userIdA }),
       ]);
 
       assert.ok(authMaxOrgs.error, 'authenticated must be denied max_owned_organizations_default');
       assert.ok(authHandleUser.error, 'authenticated must be denied handle_new_user');
       assert.ok(authCrossOrgTrigger.error, 'authenticated must be denied prevent_cross_org_reassignment');
+      assert.ok(authIsMember.error, 'RLS-only is_org_member helper must not be exposed as a public RPC');
+      assert.ok(authHasRole.error, 'RLS-only has_org_role helper must not be exposed as a public RPC');
+      assert.ok(authCanView.error, 'RLS-only can_view_profile helper must not be exposed as a public RPC');
 
       diagnostics.executedTests.push(testName);
     });
